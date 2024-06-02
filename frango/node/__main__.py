@@ -29,6 +29,7 @@ def load_data_from_basedir(base_dir: Path):
 peers = [
     PeerConfig(peer_id=1, listen="127.0.0.1:45001"),
     PeerConfig(peer_id=2, listen="127.0.0.1:45002"),
+    PeerConfig(peer_id=3, listen="127.0.0.1:45003"),
 ]
 
 

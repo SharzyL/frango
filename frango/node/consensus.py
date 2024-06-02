@@ -1,12 +1,12 @@
-from __future__ import annotations
 import asyncio
 from asyncio import Queue
 import re
-import time
 from collections import deque
 from typing import Dict, List, Optional, Tuple, Deque
 
-import rraft
+import grpc.aio as grpc
+from grpc import StatusCode as grpc_status
+
 from rraft import (
     ConfChange,
     Config,
@@ -18,11 +18,16 @@ from rraft import (
     MessageType,
     InMemoryRawNode,
     Snapshot,
-    StateRole, ConfChangeType, OverflowStrategy,
+    StateRole, ConfChangeType, default_logger, LightReady, Ready
 )
 from loguru import logger
 
+from frango.node.common import TICK_SECONDS, LEADER_ID
 from frango.pb import node_pb, node_grpc
+
+
+def _rraft_logger() -> Logger:
+    return default_logger()
 
 
 class Proposal:
@@ -59,23 +64,11 @@ class Proposal:
         )
 
 
-def example_config() -> Config:
+def _default_config() -> Config:
     cfg = Config.default()
     cfg.set_election_tick(10)
     cfg.set_heartbeat_tick(3)
     return cfg
-
-
-def is_initial_msg(msg: Message) -> bool:
-    """
-    The message can be used to initialize a raft node or not.
-    """
-    msg_type = msg.get_msg_type()
-    return (
-            msg_type == MessageType.MsgRequestVote
-            or msg_type == MessageType.MsgRequestPreVote
-            or (msg_type == MessageType.MsgHeartbeat and msg.get_commit() == 0)
-    )
 
 
 PeerStubs = Dict[int, node_grpc.FrangoNodeStub]
@@ -90,70 +83,70 @@ class NodeConsensus:
         self._proposals: Deque[Proposal] = deque()
         self._mailbox: Queue[Message] = Queue()
         self._stop_chan: Queue[None] = Queue(maxsize=1)
+        self._on_ready_cond = asyncio.Condition()
+        self._become_leader_cond = asyncio.Condition()
+        self._raft_state_lock = asyncio.Lock()
 
     def send_stop_signal(self):
         if not self._stop_chan.full():
             self._stop_chan.put_nowait(None)
 
     @staticmethod
-    def create_raft_leader(self_peer_id: int, peer_stubs: PeerStubs) -> "NodeConsensus":
-        """
-        Create a raft leader only with itself in its configuration.
-        """
-        cfg = example_config()
-        cfg.set_id(self_peer_id)
+    def create_raft_leader(peer_stubs: PeerStubs) -> "NodeConsensus":
+        cfg = _default_config()
+        cfg.set_id(LEADER_ID)
         s = Snapshot.default()
         # Because we don't use the same configuration to initialize every node, so we use
         # a non-zero index to force new followers catch up logs by snapshot first, which will
         # bring all nodes to the same initial state.
         s.get_metadata().set_index(1)
         s.get_metadata().set_term(1)
-        s.get_metadata().get_conf_state().set_voters([1])
+        s.get_metadata().get_conf_state().set_voters([LEADER_ID])
         storage = MemStorage()
         storage.wl().apply_snapshot(s)
-        raft_group = InMemoryRawNode(cfg, storage, Logger(chan_size=4096, overflow_strategy=OverflowStrategy.Block))
+        raft_group = InMemoryRawNode(cfg, storage, _rraft_logger())
         return NodeConsensus(raft_group, peer_stubs)
 
     @staticmethod
     def create_raft_follower(peer_stubs: PeerStubs) -> "NodeConsensus":
-        """
-        Create a raft follower.
-        """
         return NodeConsensus(None, peer_stubs)
 
-    def maybe_init_with_message(self, msg: Message) -> None:
-        """
-        Step a raft message, initialize the raft if needed.
-        """
+    def _maybe_init_with_message(self, msg: Message) -> None:
+        def is_initial_msg(msg_: Message) -> bool:
+            msg_type = msg_.get_msg_type()
+            return msg_type == MessageType.MsgRequestVote \
+                or msg_type == MessageType.MsgRequestPreVote \
+                or (msg_type == MessageType.MsgHeartbeat and msg_.get_commit() == 0)
+
         if self.raft_group is None:
             if is_initial_msg(msg):
-                logger.info("init")
-                cfg = example_config()
+                cfg = _default_config()
                 cfg.set_id(msg.get_to())
                 storage = MemStorage()
-                self.raft_group = InMemoryRawNode(cfg, storage,
-                                                  Logger(chan_size=4096, overflow_strategy=OverflowStrategy.Block))
+                self.raft_group = InMemoryRawNode(cfg, storage, _rraft_logger())
             else:
                 return
 
-        self.raft_group.step(msg)
-
-    def receive_message(self, msg: Message) -> None:
-        # logger.debug(f"recv msg: {msg}")
-        self._mailbox.put_nowait(msg)
-
-    async def send_messages(self, msgs: List[Message]) -> None:
+    async def _send_messages(self, msgs: List[Message]) -> None:
         for msg in msgs:
             get_to = msg.get_to()
             try:
+                if msg.get_msg_type() in (MessageType.MsgHeartbeat, MessageType.MsgHeartbeatResponse):
+                    logger.trace(f"send heartbeat: {msg}")
+                else:
+                    logger.debug(f"sending msg to {get_to}: {msg}")
                 peer_stub = self._peer_stubs[get_to]
                 await peer_stub.RRaft(node_pb.RRaftMessage(bytes=msg.encode()))
+            except grpc.AioRpcError as e:
+                if e.code() == grpc_status.UNAVAILABLE:
+                    logger.warning(f"peer {get_to} not available")
+                else:
+                    raise e
 
-            except Exception as qe:
-                logger.error(f"send raft message to {get_to} fail: “{qe}”")
-
-    async def handle_committed_entries(self, committed_entries: List[Entry], store: MemStorage) -> None:
+    async def _handle_committed_entries(self, committed_entries: List[Entry], store: MemStorage) -> None:
         for entry in committed_entries:
+            logger.success(f'handle committed (index={entry.get_index()}, type={entry.get_entry_type()}, '
+                           f'data={str(entry.get_data())})')
             if not entry.get_data():
                 # From new elected leaders.
                 continue
@@ -167,6 +160,7 @@ class NodeConsensus:
                 if caps := reg.match(data):
                     key, value = int(caps.group(1)), str(caps.group(2))
                     self.kv_pairs[key] = value
+
             elif entry.get_entry_type() == EntryType.EntryConfChange:
                 cc = ConfChange.default()
                 new_conf = ConfChange.decode(entry.get_data())
@@ -179,15 +173,12 @@ class NodeConsensus:
                 cs = self.raft_group.apply_conf_change(cc)
                 store.wl().set_conf_state(cs)
 
+            # notify that the proposal succeeded
             if self.raft_group.get_raft().get_state() == StateRole.Leader:
-                # TODO: The leader should respond to the clients, tell them if their proposals succeeded or not.
                 proposal = self._proposals.popleft()
                 proposal.send_success_signal(True)
 
-    def append_proposal(self, proposal: Proposal) -> None:
-        self._proposals.append(proposal)
-
-    def propose(self, proposal: Proposal) -> None:
+    def _raft_propose(self, proposal: Proposal) -> None:
         last_index1 = self.raft_group.get_raft().get_raft_log().last_index() + 1
 
         if proposal.normal:
@@ -209,86 +200,109 @@ class NodeConsensus:
         else:
             proposal.proposed = last_index1
 
-    async def on_ready(self) -> None:
-        store = self.raft_group.get_raft().get_raft_log().get_store().clone()
-        # Get the `Ready` with `RawNode::ready` interface.
-        ready = self.raft_group.ready()
+    async def _notify_ready(self):
+        async with self._on_ready_cond:
+            self._on_ready_cond.notify()
 
-        if ready.messages():
-            # Send out the messages come from the node.
-            await self.send_messages(ready.take_messages())
+    async def _wait_ready_loop(self):
+        while not self._stop_chan.full():
+            async with self._on_ready_cond:
+                await self._on_ready_cond.wait_for(lambda: self.raft_group and self.raft_group.has_ready())
 
-        # Apply the snapshot. It's necessary because in `RawNode::advance` we stabilize the snapshot.
-        snapshot_default = Snapshot.default()
-        if ready.snapshot() != snapshot_default.make_ref():
-            s = ready.snapshot().clone()
-            store.wl().apply_snapshot(s)
+            await self._on_ready()
 
-        # Apply all committed entries.
-        await self.handle_committed_entries(ready.take_committed_entries(), store)
+    async def _on_ready(self) -> None:
+        async with self._raft_state_lock:
+            store = self.raft_group.get_raft().get_raft_log().get_store().clone()
+            ready: Ready = self.raft_group.ready()
 
-        # Persistent raft logs. It's necessary because in `RawNode::advance` we stabilize
-        # raft logs to the latest position.
-        store.wl().append(ready.entries())
+            if ready.messages():
+                await self._send_messages(ready.take_messages())
 
-        if hs := ready.hs():
-            # Raft HardState changed, and we need to persist it.
-            store.wl().set_hardstate(hs)
+            # Apply the snapshot. It's necessary because in `RawNode::advance` we stabilize the snapshot.
+            snapshot_default = Snapshot.default()
+            if ready.snapshot() != snapshot_default.make_ref():
+                s = ready.snapshot().clone()
+                store.wl().apply_snapshot(s)
 
-        if persisted_msgs := ready.take_persisted_messages():
-            await self.send_messages(persisted_msgs)
+            await self._handle_committed_entries(ready.take_committed_entries(), store)
 
-        # Call `RawNode::advance` interface to update position flags in the raft.
-        light_rd = self.raft_group.advance(ready.make_ref())
-        # Update commit index.
-        if commit := light_rd.commit_index():
-            store.wl().hard_state().set_commit(commit)
+            # Persistent raft logs. It's necessary because in `RawNode::advance` we stabilize
+            # raft logs to the latest position.
+            store.wl().append(ready.entries())
 
-        # Send out the messages.
-        await self.send_messages(light_rd.take_messages())
-        # Apply all committed entries.
-        await self.handle_committed_entries(light_rd.take_committed_entries(), store)
-        # Advance the apply index.
-        self.raft_group.advance_apply()
+            if hs := ready.hs():
+                store.wl().set_hardstate(hs)
+
+            if persisted_msgs := ready.take_persisted_messages():
+                await self._send_messages(persisted_msgs)
+
+            # Call `RawNode::advance` interface to update position flags in the raft.
+
+            light_rd: LightReady = self.raft_group.advance(ready.make_ref())
+            # Update commit index.
+            if commit := light_rd.commit_index():
+                store.wl().hard_state().set_commit(commit)
+
+            await self._send_messages(light_rd.take_messages())
+            await self._handle_committed_entries(light_rd.take_committed_entries(), store)
+            self.raft_group.advance_apply()
 
     def is_leader(self):
-        return self.raft_group is not None and self.raft_group.get_raft().get_state() == StateRole.Leader
+        if self.raft_group is None:
+            return False
+        else:
+            return self.raft_group.get_raft().get_state() == StateRole.Leader
 
     async def add_peers(self):
         for peer_id, peer in self._peer_stubs.items():
             conf_change = ConfChange.default()
             conf_change.set_node_id(peer_id)
             conf_change.set_change_type(ConfChangeType.AddNode)
-            self.append_proposal(Proposal(conf_change=conf_change))
+            await self.propose(Proposal(conf_change=conf_change))
+
+    async def propose(self, proposal: Proposal) -> None:
+        async with self._become_leader_cond:
+            await self._become_leader_cond.wait_for(lambda: self.is_leader())
+        async with self._raft_state_lock:
+            self._proposals.append(proposal)
+            self._raft_propose(proposal)
+        await proposal.wait_until_success()
+
+    def on_receive_msg(self, msg: Message, event_loop: asyncio.AbstractEventLoop) -> None:
+        if msg.get_msg_type() in (MessageType.MsgHeartbeat, MessageType.MsgHeartbeatResponse):
+            logger.trace(f"recv heartbeat: {msg}")
+        else:
+            logger.debug(f"recv msg from {msg.get_from()}: {msg}")
+
+        self._maybe_init_with_message(msg)
+
+        async def step():
+            async with self._raft_state_lock:
+                self.raft_group.step(msg)
+            if self.raft_group.has_ready():
+                await self._notify_ready()
+
+        if self.raft_group is not None:
+            event_loop.create_task(step())
 
     async def loop_until_stopped(self) -> None:
-        last_tick = time.time()
-        while True:
+        wait_ready_loop = asyncio.create_task(self._wait_ready_loop())
 
-            # check mailbox every 10ms
-            await asyncio.sleep(0.01)
-            while not self._mailbox.empty():
-                msg = self._mailbox.get_nowait()
-                self.maybe_init_with_message(msg)
-                if self.raft_group is not None:
-                    self.raft_group.step(msg)
+        next_tick = asyncio.get_running_loop().time() + TICK_SECONDS  # tick immediately
+        while not self._stop_chan.full():
 
-            # tick raft_group every 100ms
-            if self.raft_group is not None and time.time() - last_tick > 0.1:
-                self.raft_group.tick()
-                last_tick = time.time()
+            # wait until next tick
+            await asyncio.sleep(next_tick - asyncio.get_running_loop().time())
+            next_tick = asyncio.get_running_loop().time() + TICK_SECONDS
+            if self.raft_group:
+                async with self._raft_state_lock:
+                    self.raft_group.tick()
+                    async with self._become_leader_cond:
+                        self._become_leader_cond.notify()
 
-            # Let the leader pick pending proposals from the global queue.
-            if self.raft_group and self.raft_group.get_raft().get_state() == StateRole.Leader:
-                # Handle new proposals.
-                for p in self._proposals:
-                    if p.proposed is None:
-                        self.propose(p)
+                # handle readies
+                if self.raft_group.has_ready():
+                    await self._notify_ready()
 
-            # handle readies
-            if self.raft_group and self.raft_group.has_ready():
-                await self.on_ready()
-
-            # check stop signal
-            if self._stop_chan.full():
-                break
+        await wait_ready_loop
