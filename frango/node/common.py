@@ -8,5 +8,3 @@ class PeerConfig:
 
 
 TICK_SECONDS = 0.1
-
-LEADER_ID = 1
