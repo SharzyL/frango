@@ -6,13 +6,13 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 import grpc.aio as grpc
-from grpc import StatusCode as grpc_status
+from grpc import StatusCode as grpcStatus
 
 import rraft
 from loguru import logger
 
-from frango.node.common import TICK_SECONDS
 from frango.pb import node_pb, node_grpc
+from frango.config import Raft as RaftConfig
 
 
 class Proposal:
@@ -53,8 +53,9 @@ PeerStubs = Dict[int, node_grpc.FrangoNodeStub]
 
 
 class NodeConsensus:
-    def __init__(self, raft_group, peer_stubs: PeerStubs) -> None:
+    def __init__(self, raft_group, peer_stubs: PeerStubs, config: RaftConfig) -> None:
         self.raft_group: rraft.InMemoryRawNode = raft_group
+        self.config: RaftConfig = config
 
         # TODO: use database
         self.kv_pairs: Dict[int, str] = dict()
@@ -93,7 +94,7 @@ class NodeConsensus:
                 peer_stub = self._peer_stubs[get_to]
                 await peer_stub.RRaft(node_pb.RRaftMessage(bytes=msg.encode()))
             except grpc.AioRpcError as e:
-                if e.code() == grpc_status.UNAVAILABLE:
+                if e.code() == grpcStatus.UNAVAILABLE:
                     logger.warning(f"peer {get_to} not available")
                 else:
                     raise e
@@ -234,12 +235,12 @@ class NodeConsensus:
     async def loop_until_stopped(self) -> None:
         wait_ready_loop = asyncio.create_task(self._wait_ready_loop())
 
-        next_tick = asyncio.get_running_loop().time() + TICK_SECONDS  # tick immediately
+        next_tick = asyncio.get_running_loop().time() + self.config.tick_seconds  # tick immediately
         while not self._stop_chan.full():
 
             # wait until next tick
             await asyncio.sleep(next_tick - asyncio.get_running_loop().time())
-            next_tick = asyncio.get_running_loop().time() + TICK_SECONDS
+            next_tick = asyncio.get_running_loop().time() + self.config.tick_seconds
 
             # do the tick
             async with self._raft_state_lock:

@@ -6,7 +6,7 @@ from loguru import logger
 import rraft
 
 from frango.node.consensus import NodeConsensus, Proposal
-from frango.node.common import PeerConfig
+from frango.config import Config
 from frango.pb import node_pb, node_grpc
 
 
@@ -40,9 +40,11 @@ class FrangoNode:
         raft_group = rraft.InMemoryRawNode(cfg, storage, rraft.default_logger())
         return raft_group
 
-    def __init__(self, self_peer_id: int, peers_dict: Dict[int, PeerConfig]):
+    def __init__(self, self_peer_id: int, config: Config):
         self.grpc_server = grpc.server()
         self.peer_id = self_peer_id
+
+        peers_dict = {peer.peer_id: peer for peer in config.peers}
         peer_self = peers_dict[self_peer_id]
 
         self.peer_stubs: Dict[int, node_grpc.FrangoNodeStub] = {
@@ -51,7 +53,7 @@ class FrangoNode:
             if peer_id != self_peer_id
         }
 
-        self.consensus = NodeConsensus(self._make_rraft_config(), self.peer_stubs)
+        self.consensus = NodeConsensus(self._make_rraft_config(), self.peer_stubs, config.raft)
 
         self.listen = peer_self.listen
 

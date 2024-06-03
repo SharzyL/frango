@@ -5,7 +5,8 @@ from loguru import logger
 import sys
 
 from frango.data_model import User, Article, Read
-from frango.node.node import PeerConfig, FrangoNode
+from frango.node.node import FrangoNode
+from frango.config import get_config_default
 
 
 def load_data_from_basedir(base_dir: Path):
@@ -26,25 +27,20 @@ def load_data_from_basedir(base_dir: Path):
             reads.append(Read.from_json(line))
 
 
-peers = [
-    PeerConfig(peer_id=1, listen="127.0.0.1:45001"),
-    PeerConfig(peer_id=2, listen="127.0.0.1:45002"),
-    PeerConfig(peer_id=3, listen="127.0.0.1:45003"),
-]
-
-
 async def async_main():
     parser = ArgumentParser()
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('-i', type=int, required=True)
+    parser.add_argument('-c', '--config', type=Path, default="./etc/default.toml")
+
     args = parser.parse_args()
 
     log_level = "DEBUG" if args.debug else "INFO"
     logger.remove()
     logger.add(sys.stdout, colorize=True, level=log_level)
 
-    peers_dict = {peer.peer_id: peer for peer in peers}
-    frango_node = FrangoNode(args.i, peers_dict)
+    config = get_config_default(args.config)
+    frango_node = FrangoNode(args.i, config)
     await frango_node.loop()
 
 
