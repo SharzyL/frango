@@ -18,9 +18,22 @@ class Raft:
 
 
 @dataclass
+class Partition:
+    type: str
+
+    # valid if type == "regular"
+    filter: dict[int, str] = field(default_factory=list)
+
+    # valid if type == "dependent"
+    dependentTable: str = field(default="")
+    dependentKey: str = field(default="")
+
+
+@dataclass
 class Config:
     peers: List[Peer]
     raft: Raft = field(default_factory=Raft)
+    partitions: dict[int, Partition] = field(default_factory=dict)
 
 
 DEFAULT_CONFIG_PATH = "./etc/default.toml"
@@ -34,3 +47,16 @@ def get_config(path: str | Path) -> Config:
 
 def get_config_default(path: Optional[str | Path]) -> Config:
     return get_config(DEFAULT_CONFIG_PATH if path is None else path)
+
+if __name__ == "__main__":
+    import sqlglot
+
+    # noinspection SqlNoDataSourceInspection
+    parsed = sqlglot.parse('''
+-- 执行 SQL 语句
+CREATE TABLE users (name , email);
+INSERT INTO users (name, email) VALUES ('John Doe', 'john@example.com');
+SELECT * FROM users
+''')
+    for p in parsed:
+        print(repr(p))

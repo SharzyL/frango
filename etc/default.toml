@@ -1,5 +1,30 @@
 peers = [
     { peer_id = 1, listen = "127.0.0.1:45001" },
     { peer_id = 2, listen = "127.0.0.1:45002" },
-    { peer_id = 3, listen = "127.0.0.1:45003" },
+#    { peer_id = 3, listen = "127.0.0.1:45003" },
 ]
+
+[partition.User]
+type = "regular"
+filter.1 = "region == 'Hong kong'"
+filter.2 = "region == 'Beijing"
+
+[partition.Article]
+type = "regular"
+filter.1 = "region == 'Hong kong'"
+filter.2 = "region == 'Beijing"
+
+[partition.Read]
+type = "dependent"
+dependentTable = "User"
+dependentKey = "uid"
+
+[partition.BeRead]
+type = "dependent"
+dependentTable = "Article"
+dependentKey = "aid"
+
+[partition.PopularRank]
+type = "regular"
+filter.1 = "temporaGranularity == 'daily'"
+filter.2 = "temporaGranularity == 'weekly' OR temporaGranularity == 'monthly'"

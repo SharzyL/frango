@@ -11,16 +11,19 @@ dependencies = [
     "dataclass-wizard>=0.22.3",
     "rraft-py>=0.2.27",
     "grpcio>=1.64.0",
+    "sqlglot>=25.1.0",
 ]
 devDependencies = [
     "grpcio-tools>=1.64.0",
 ]
 
 [project.scripts]
-storage_node = "frango.node:main"
+frango-node = "frango.node:main"
+frango-cli = "frango.client.cli:main"
 
 [tool.pdm.scripts]
-start = { call = "frango.node:main" }
+node = { call = "frango.node:main" }
+cli = { call = "frango.client.cli:main" }
 
 [tool.pdm]
 distribution = true

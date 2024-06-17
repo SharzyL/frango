@@ -7,6 +7,7 @@ import rraft
 
 from frango.node.consensus import NodeConsensus, Proposal
 from frango.config import Config
+from frango.node.sql_schedule import Scheduler
 from frango.pb import node_pb, node_grpc
 
 
@@ -58,6 +59,7 @@ class FrangoNode:
         }
 
         self.consensus = NodeConsensus(self._make_rraft_config(), self.peer_stubs, config.raft)
+        self.sql_splitter = Scheduler(config.partitions)
 
         self.listen = peer_self.listen
 
