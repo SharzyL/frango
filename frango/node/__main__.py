@@ -28,10 +28,10 @@ def load_data_from_basedir(base_dir: Path):
 
 
 async def async_main():
-    parser = ArgumentParser()
-    parser.add_argument('--debug', action='store_true')
-    parser.add_argument('-i', type=int, required=True)
-    parser.add_argument('-c', '--config', type=Path, default="./etc/default.toml")
+    parser = ArgumentParser(description='Frango node')
+    parser.add_argument('--debug', action='store_true', help='enable debug mode')
+    parser.add_argument('-i', type=int, required=True, help='index of node')
+    parser.add_argument('-c', '--config', type=Path, default="./etc/default.toml", help='config file')
 
     args = parser.parse_args()
 

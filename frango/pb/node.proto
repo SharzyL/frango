@@ -6,13 +6,23 @@ message Empty {}
 
 message PingResp {
     int32 id = 1;
+    optional int32 leader_id = 2;
 }
 
 message RRaftMessage {
     bytes bytes = 1;
 }
 
+message QueryReq {
+    string query_str = 1;
+}
+
+message QueryResp {
+    bool success = 1;
+}
+
 service FrangoNode {
-    rpc Ping(Empty) returns (PingResp);
-    rpc RRaft(RRaftMessage) returns (Empty);
+    rpc Ping (Empty) returns (PingResp);
+    rpc RRaft (RRaftMessage) returns (Empty);
+    rpc Query (QueryReq) returns (QueryResp);
 }

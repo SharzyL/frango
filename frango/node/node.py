@@ -18,12 +18,16 @@ class FrangoNode:
             self.event_loop = event_loop
 
         def Ping(self, request: node_pb.Empty, context: grpc.ServicerContext):
-            return node_pb.PingResp(id=1)
+            return node_pb.PingResp(id=self.node.peer_id, leader_id=self.node.consensus.leader_id())
 
         def RRaft(self, request: node_pb.RRaftMessage, context: grpc.ServicerContext):
             msg = rraft.Message.decode(request.bytes)
             self.node.consensus.on_receive_msg(msg, self.event_loop)
             return node_pb.Empty()
+
+        def Query(self, request: node_pb.QueryReq, context: grpc.ServicerContext):
+            resp: node_pb.QueryResp = node_pb.QueryResp()
+            pass
 
     def _make_rraft_config(self) -> rraft.InMemoryRawNode:
         cfg = rraft.Config.default()

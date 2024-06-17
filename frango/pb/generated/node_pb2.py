@@ -14,7 +14,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\nnode.proto\x12\x06\x66rango\"\x07\n\x05\x45mpty\"\x16\n\x08PingResp\x12\n\n\x02id\x18\x01 \x01(\x05\"\x1d\n\x0cRRaftMessage\x12\r\n\x05\x62ytes\x18\x01 \x01(\x0c\x32\x63\n\nFrangoNode\x12\'\n\x04Ping\x12\r.frango.Empty\x1a\x10.frango.PingResp\x12,\n\x05RRaft\x12\x14.frango.RRaftMessage\x1a\r.frango.Emptyb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\nnode.proto\x12\x06\x66rango\"\x07\n\x05\x45mpty\"<\n\x08PingResp\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x16\n\tleader_id\x18\x02 \x01(\x05H\x00\x88\x01\x01\x42\x0c\n\n_leader_id\"\x1d\n\x0cRRaftMessage\x12\r\n\x05\x62ytes\x18\x01 \x01(\x0c\"\x1d\n\x08QueryReq\x12\x11\n\tquery_str\x18\x01 \x01(\t\"\x1c\n\tQueryResp\x12\x0f\n\x07success\x18\x01 \x01(\x08\x32\x91\x01\n\nFrangoNode\x12\'\n\x04Ping\x12\r.frango.Empty\x1a\x10.frango.PingResp\x12,\n\x05RRaft\x12\x14.frango.RRaftMessage\x1a\r.frango.Empty\x12,\n\x05Query\x12\x10.frango.QueryReq\x1a\x11.frango.QueryRespb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -24,9 +24,13 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _globals['_EMPTY']._serialized_start=22
   _globals['_EMPTY']._serialized_end=29
   _globals['_PINGRESP']._serialized_start=31
-  _globals['_PINGRESP']._serialized_end=53
-  _globals['_RRAFTMESSAGE']._serialized_start=55
-  _globals['_RRAFTMESSAGE']._serialized_end=84
-  _globals['_FRANGONODE']._serialized_start=86
-  _globals['_FRANGONODE']._serialized_end=185
+  _globals['_PINGRESP']._serialized_end=91
+  _globals['_RRAFTMESSAGE']._serialized_start=93
+  _globals['_RRAFTMESSAGE']._serialized_end=122
+  _globals['_QUERYREQ']._serialized_start=124
+  _globals['_QUERYREQ']._serialized_end=153
+  _globals['_QUERYRESP']._serialized_start=155
+  _globals['_QUERYRESP']._serialized_end=183
+  _globals['_FRANGONODE']._serialized_start=186
+  _globals['_FRANGONODE']._serialized_end=331
 # @@protoc_insertion_point(module_scope)

@@ -256,3 +256,10 @@ class NodeConsensus:
                 await self._notify_ready()
 
         await wait_ready_loop
+
+    def leader_id(self) -> Optional[int]:
+        leader_id = self.raft_group.get_raft().get_leader_id()
+        if leader_id == rraft.INVALID_ID:
+            return None
+        else:
+            return leader_id
