@@ -1,5 +1,5 @@
 { lib
-, python3
+, buildPythonApplication
 , fetchPypi
 , protobuf
 , rustPlatform
@@ -7,7 +7,7 @@
 , pytest-benchmark
 }:
 
-python3.pkgs.buildPythonApplication rec {
+buildPythonApplication rec {
   pname = "rraft-py";
   version = "0.2.27";
   pyproject = true;
@@ -42,7 +42,6 @@ python3.pkgs.buildPythonApplication rec {
     description = "Unofficial Python Binding of the tikv/raft-rs";
     homepage = "https://pypi.org/project/rraft-py";
     license = licenses.asl20;
-    maintainers = with maintainers; [ ];
     mainProgram = "rraft-py";
   };
 }

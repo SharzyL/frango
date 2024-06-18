@@ -2,3 +2,4 @@
 .pdm-python
 __pycache__
 result
+/.run

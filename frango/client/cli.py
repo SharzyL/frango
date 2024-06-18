@@ -40,7 +40,7 @@ def main():
     args = parser.parse_args()
 
     config = get_config(args.config)
-    peers_dict = {peer.peer_id: peer for peer in config.peers}
+    peers_dict = {peer.node_id: peer for peer in config.peers}
     listen = peers_dict[args.i].listen if args.i else config.peers[0].listen
     stub = node_grpc.FrangoNodeStub(channel=grpc.insecure_channel(listen))
 

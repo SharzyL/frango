@@ -7,8 +7,8 @@
   outputs = { self, nixpkgs, flake-utils }@inputs:
     let
       overlay = final: prev: {
-        frango = final.python3.pkgs.callPackage ./pkg.nix { };
-        rraft-py = final.python3.pkgs.callPackage ./nix/rraft-py { };
+        frango = final.python312.pkgs.callPackage ./pkg.nix { };
+        rraft-py = final.python312.pkgs.callPackage ./nix/rraft-py { };
       };
     in
     flake-utils.lib.eachDefaultSystem
@@ -22,8 +22,8 @@
           legacyPackages = pkgs;
           devShell = frango.overrideAttrs (oldAttrs: {
             nativeBuildInputs = oldAttrs.nativeBuildInputs ++ [
-              pkgs.pdm
-              pkgs.python3Packages.grpcio-tools
+              (pkgs.pdm.override { python3 = pkgs.python312; })
+              pkgs.python312.pkgs.grpcio-tools
             ];
           });
         }
