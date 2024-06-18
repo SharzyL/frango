@@ -49,7 +49,7 @@ async def async_main():
     }
     frango_node = FrangoNode(args.i, config, known_classes=known_classes)
 
-    if args.create is not None:
+    if args.create:
         for cls in (Article, User, Read):
             frango_node.storage.execute(cls.sql_drop_if_exists())
             frango_node.storage.execute(cls.sql_create())

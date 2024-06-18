@@ -3,7 +3,7 @@ from typing import Dict, Optional, Iterable, Type
 import sqlglot
 import sqlglot.expressions as exp
 
-from frango.config import Partition
+from frango.config import Config
 from frango.sql_adaptor import SQLDef
 
 
@@ -121,7 +121,7 @@ def eval_literal(expr: exp.Expression):
 
 class RegularTableSplitter:
     # `rules` maps the node id to its filter string, e.g. `NAME == 'bob' AND AGE > 4'
-    def __init__(self, partition: Partition, table_name: str):
+    def __init__(self, partition: Config.Partition, table_name: str):
         assert partition.type == "regular"
         self.table_name = table_name
         self.rules: Dict[int, exp.Expression] = {
@@ -148,9 +148,9 @@ class RegularTableSplitter:
 
 
 class Scheduler:
-    def __init__(self, partitions: dict[str, Partition], node_id_list: list[int]):
+    def __init__(self, partitions: dict[str, Config.Partition], node_id_list: list[int]):
         self.regular_table_partitioners: dict[str, RegularTableSplitter] = {}
-        self.dependent_partitions: dict[str, Partition] = {}
+        self.dependent_partitions: dict[str, Config.Partition] = {}
         for table_name, partition in partitions.items():
             if partition.type == "regular":
                 self.regular_table_partitioners[table_name] = RegularTableSplitter(partition, table_name)

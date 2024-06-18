@@ -9,13 +9,12 @@ import rraft
 
 from frango.config import Config
 from frango.pb import node_pb, node_grpc
-from frango.pb.generated.node_pb2 import QueryReq, QueryResp
 from frango.sql_adaptor import SQLDef
 from frango.table_def import Article, User, Read
 
 from frango.node.sql_schedule import (
-    Scheduler, sql_parse_one,
-    SerialExecutionPlan, LocalExecutionPlan, DistributedExecutionPlan, ExecutionPlan, sql_to_str,
+    Scheduler, sql_parse_one, sql_to_str,
+    SerialExecutionPlan, LocalExecutionPlan, DistributedExecutionPlan, ExecutionPlan,
 )
 from frango.node.consensus import NodeConsensus, Proposal
 from frango.node.storage import StorageBackend
@@ -105,7 +104,7 @@ class FrangoNode:
         self.execute_plan(plan, must_local=True)
 
     @staticmethod
-    def _parse_query_resp(resp: QueryResp) -> list[tuple]:
+    def _parse_query_resp(resp: node_pb.QueryResp) -> list[tuple]:
         assert resp.success  # handle error later
 
         def parse_row(row: str):
@@ -129,8 +128,8 @@ class FrangoNode:
                 if node_id == self.node_id:
                     result += self.storage.execute(subquery)
                 else:
-                    query_req = QueryReq(query_str=sql_to_str(subquery))
-                    resp: QueryResp = self.peer_stubs[node_id].SubQuery(query_req)
+                    query_req = node_pb.QueryReq(query_str=sql_to_str(subquery))
+                    resp: node_pb.QueryResp = self.peer_stubs[node_id].SubQuery(query_req)
                     result += self._parse_query_resp(resp)
             return result
 

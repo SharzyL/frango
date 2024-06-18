@@ -12,7 +12,9 @@ import rraft
 from loguru import logger
 
 from frango.pb import node_pb, node_grpc
-from frango.config import Raft as RaftConfig
+from frango.config import Config
+
+RaftConfig = Config.Raft
 
 
 class Proposal:

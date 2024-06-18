@@ -6,31 +6,29 @@ from pathlib import Path
 import tomllib
 
 
-@dataclass
-class Peer:
-    node_id: int
-    listen: str
-
-
-@dataclass
-class Raft:
-    tick_seconds: float = field(default=0.1)
-
-
-@dataclass
-class Partition:
-    type: str
-
-    # valid if type == "regular"
-    filter: dict[int, str] = field(default_factory=list)
-
-    # valid if type == "dependent"
-    dependentTable: str = field(default="")
-    dependentKey: str = field(default="")
-
 
 @dataclass
 class Config:
+    @dataclass
+    class Peer:
+        node_id: int
+        listen: str
+
+    @dataclass
+    class Raft:
+        tick_seconds: float = field(default=0.1)
+
+    @dataclass
+    class Partition:
+        type: str
+
+        # valid if type == "regular"
+        filter: dict[int, str] = field(default_factory=list)
+
+        # valid if type == "dependent"
+        dependentTable: str = field(default="")
+        dependentKey: str = field(default="")
+
     peers: List[Peer]
     db_path_pattern: str
     raft: Raft = field(default_factory=Raft)
