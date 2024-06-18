@@ -19,10 +19,14 @@ message QueryReq {
 
 message QueryResp {
     bool success = 1;
+    repeated string rows_in_json = 3;
 }
 
 service FrangoNode {
     rpc Ping (Empty) returns (PingResp);
     rpc RRaft (RRaftMessage) returns (Empty);
     rpc Query (QueryReq) returns (QueryResp);
+
+    // used for internode communication
+    rpc SubQuery (QueryReq) returns (QueryResp);
 }

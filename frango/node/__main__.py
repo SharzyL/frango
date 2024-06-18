@@ -42,12 +42,18 @@ async def async_main():
     logger.add(sys.stdout, colorize=True, level=log_level)
 
     config = get_config_default(args.config)
-    frango_node = FrangoNode(args.i, config)
+    known_classes = {
+        "Article": Article,
+        "User": User,
+        "Read": Read,
+    }
+    frango_node = FrangoNode(args.i, config, known_classes=known_classes)
 
     if args.create is not None:
         for cls in (Article, User, Read):
             frango_node.storage.execute(cls.sql_drop_if_exists())
             frango_node.storage.execute(cls.sql_create())
+        frango_node.storage.commit()
 
     if args.bulk_load is not None:
         table_dat_files = {
@@ -56,8 +62,7 @@ async def async_main():
             "Read": args.bulk_load / "read.dat",
         }
         frango_node.bulk_load(table_dat_files)
-
-    frango_node.storage.commit()
+        frango_node.storage.commit()
 
     await frango_node.loop()
 

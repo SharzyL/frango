@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+from typing import Type
 
 from loguru import logger
 import sqlglot.expressions as exp
@@ -13,11 +14,12 @@ class StorageBackend:
         self.db_conn = sqlite3.connect(db_path)
         self.db_conn.autocommit = False
 
-    def execute(self, query: str | exp.Expression | list[exp.Expression]):
+    def execute(self, query: str | exp.Expression | list[exp.Expression]) -> list[tuple]:
         cursor = self.db_conn.cursor()
 
         def execute_one(stmt_: exp.Expression):
             stmt_str = sql_to_str(stmt_)
+            # handle parametrized query
             if '_params' in stmt_.args:
                 params = stmt_.args.get('_params')
                 if isinstance(params, dict):
@@ -38,7 +40,7 @@ class StorageBackend:
             for stmt in query:
                 execute_one(stmt)
 
-        # TODO: read out
+        return cursor.fetchall()
 
     def commit(self):
         logger.info(f'sql commit')

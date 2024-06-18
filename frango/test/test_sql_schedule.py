@@ -1,9 +1,14 @@
 import unittest
 from dataclasses import dataclass
 
+import sqlglot.expressions as exp
+
 from frango.config import Partition
 from frango.sql_adaptor import SQLDef
-from frango.node.sql_schedule import RegularTableSplitter, Scheduler, sql_to_str, sql_parse_one, _sql_eval
+from frango.node.sql_schedule import (
+    RegularTableSplitter, Scheduler, sql_to_str, sql_parse_one, _sql_eval,
+    SerialExecutionPlan, DistributedExecutionPlan, LocalExecutionPlan
+)
 
 
 # noinspection SqlNoDataSourceInspection
@@ -13,8 +18,9 @@ class TestSplit(unittest.TestCase):
         splitter = RegularTableSplitter(Partition(type="regular", filter={
             1: "id > 4",
             2: "id <= 4"
-        }))
+        }), table_name="User")
         query = sql_parse_one("SELECT id, timestamp FROM Article WHERE id > 3 AND name == 'harry'")
+        assert isinstance(query, exp.Select)
         splits = splitter.partition_select_query(query)
         self.assertEqual(sql_to_str(splits[1]),
                          "SELECT id, timestamp FROM Article WHERE (id > 3 AND name = 'harry') AND id > 4")
@@ -34,7 +40,7 @@ class TestSplit(unittest.TestCase):
             1: "id > 4",
             2: "id <= 4 AND gender == 'male'",
             3: "id <= 4 AND gender != 'male'",
-        }))
+        }), table_name="User")
         self.assertEqual(splitter.get_belonging_nodes({"id": 5, "gender": "male"}), [1])
         self.assertEqual(splitter.get_belonging_nodes({"id": 0, "gender": "male"}), [2])
         self.assertEqual(splitter.get_belonging_nodes({"id": 0, "gender": "female"}), [3])
@@ -60,11 +66,14 @@ class TestSchedule(unittest.TestCase):
             SELECT id, timestamp FROM Article WHERE category == "music";
             INSERT INTO Article (aid, category) VALUES (100, "music"), (200, "politics");
         ''')
-        self.assertEqual(len(plan[1]), 2)
-        self.assertEqual(len(plan[2]), 2)
-        self.assertEqual(len(plan[3]), 0)
-        self.assertIn("politics", sql_to_str(plan[1][1]))
-        self.assertIn("music", sql_to_str(plan[2][1]))
+        self.assertIsInstance(plan, SerialExecutionPlan)
+        insertion_plan = plan.steps[1]
+        self.assertIsInstance(insertion_plan, DistributedExecutionPlan)
+        self.assertIn(1, insertion_plan.queries_for_node)
+        self.assertIn(2, insertion_plan.queries_for_node)
+        self.assertNotIn(3, insertion_plan.queries_for_node)
+        self.assertIn("politics", sql_to_str(insertion_plan.queries_for_node[1]))
+        self.assertIn("music", sql_to_str(insertion_plan.queries_for_node[2]))
 
     def test_dependent(self):
         @dataclass
@@ -104,8 +113,14 @@ class TestSchedule(unittest.TestCase):
 
         def verify_plan(node_id, person_inserts, read_inserts):
             plan = sch.schedule_bulk_load_for_node({"Person": persons, "Read": reads}, node_id)
-            self.assertEqual(len(plan[0].expression.expressions), person_inserts)
-            self.assertEqual(len(plan[1].expression.expressions), read_inserts)
+            self.assertIsInstance(plan, SerialExecutionPlan)
+            step_person = plan.steps[0]
+            self.assertIsInstance(step_person, LocalExecutionPlan)
+            self.assertEqual(len(step_person.query.args['_params']), person_inserts)
+
+            step_read = plan.steps[1]
+            self.assertIsInstance(step_read, LocalExecutionPlan)
+            self.assertEqual(len(step_read.query.args['_params']), read_inserts)
 
         verify_plan(1, 2, 1)
         verify_plan(2, 1, 1)

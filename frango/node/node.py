@@ -1,6 +1,7 @@
 import asyncio
+import json
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Type, Iterable, Optional
 
 import grpc.aio as grpc
 from loguru import logger
@@ -8,10 +9,14 @@ import rraft
 
 from frango.config import Config
 from frango.pb import node_pb, node_grpc
+from frango.pb.generated.node_pb2 import QueryReq, QueryResp
 from frango.sql_adaptor import SQLDef
 from frango.table_def import Article, User, Read
 
-from frango.node.sql_schedule import Scheduler
+from frango.node.sql_schedule import (
+    Scheduler, sql_parse_one,
+    SerialExecutionPlan, LocalExecutionPlan, DistributedExecutionPlan, ExecutionPlan, sql_to_str,
+)
 from frango.node.consensus import NodeConsensus, Proposal
 from frango.node.storage import StorageBackend
 
@@ -23,17 +28,27 @@ class FrangoNode:
             self.node = node
             self.event_loop = event_loop
 
-        def Ping(self, request: node_pb.Empty, context: grpc.ServicerContext):
+        def Ping(self, request: node_pb.Empty, context: grpc.ServicerContext) -> node_pb.PingResp:
             return node_pb.PingResp(id=self.node.node_id, leader_id=self.node.consensus.leader_id())
 
-        def RRaft(self, request: node_pb.RRaftMessage, context: grpc.ServicerContext):
+        def RRaft(self, request: node_pb.RRaftMessage, context: grpc.ServicerContext) -> node_pb.Empty:
             msg = rraft.Message.decode(request.bytes)
             self.node.consensus.on_receive_msg(msg, self.event_loop)
             return node_pb.Empty()
 
-        def Query(self, request: node_pb.QueryReq, context: grpc.ServicerContext):
-            resp: node_pb.QueryResp = node_pb.QueryResp()
-            pass
+        def Query(self, request: node_pb.QueryReq, context: grpc.ServicerContext) -> node_pb.QueryResp:
+            plan = self.node.scheduler.schedule_query(request.query_str)
+            result = self.node.execute_plan(plan, must_local=False)
+            result_rows_in_json: Iterable[str] = map(json.dumps, result)
+            return node_pb.QueryResp(success=True, rows_in_json=result_rows_in_json)
+
+        def SubQuery(self, request: node_pb.QueryReq, context: grpc.ServicerContext) -> node_pb.QueryResp:
+            # SubQuery must be totally local
+            query = sql_parse_one(request.query_str)
+            plan = LocalExecutionPlan(query=query)
+            result = self.node.execute_plan(plan, must_local=True)
+            result_rows_in_json: Iterable[str] = map(json.dumps, result)
+            return node_pb.QueryResp(success=True, rows_in_json=result_rows_in_json)
 
     def _make_rraft_config(self) -> rraft.InMemoryRawNode:
         cfg = rraft.Config.default()
@@ -50,7 +65,7 @@ class FrangoNode:
         raft_group = rraft.InMemoryRawNode(cfg, storage, rraft.default_logger())
         return raft_group
 
-    def __init__(self, self_node_id: int, config: Config):
+    def __init__(self, self_node_id: int, config: Config, known_classes: Optional[Dict[str, Type]] = None):
         self.grpc_server = grpc.server()
         self.node_id = self_node_id
 
@@ -71,6 +86,7 @@ class FrangoNode:
         self.storage = StorageBackend(db_path)
 
         self.listen = peer_self.listen
+        self.known_classes = known_classes or dict()
 
     def bulk_load(self, table_dat_files: Dict[str, Path]) -> None:
         known_tables = [Article, User, Read]
@@ -86,7 +102,45 @@ class FrangoNode:
             tables[table_name] = table
 
         plan = self.scheduler.schedule_bulk_load_for_node(tables, self.node_id)
-        self.storage.execute(plan)
+        self.execute_plan(plan, must_local=True)
+
+    @staticmethod
+    def _parse_query_resp(resp: QueryResp) -> list[tuple]:
+        assert resp.success  # handle error later
+
+        def parse_row(row: str):
+            row_ = json.loads(row)
+            assert isinstance(row_, list)
+            return tuple(row_)
+
+        return list(map(parse_row, resp.rows_in_json))
+
+    def execute_plan(self, plan: ExecutionPlan, must_local: bool = False) -> list[tuple]:
+        if isinstance(plan, LocalExecutionPlan):
+            return self.storage.execute(plan.query)
+
+        elif isinstance(plan, DistributedExecutionPlan):
+            assert not must_local
+            result: list[tuple] = []
+
+            # TODO: make it parallel
+            # TODO: handle error
+            for node_id, subquery in plan.queries_for_node.items():
+                if node_id == self.node_id:
+                    result += self.storage.execute(subquery)
+                else:
+                    query_req = QueryReq(query_str=sql_to_str(subquery))
+                    resp: QueryResp = self.peer_stubs[node_id].SubQuery(query_req)
+                    result += self._parse_query_resp(resp)
+            return result
+
+        elif isinstance(plan, SerialExecutionPlan):
+            last_valid_result = []
+            for step in plan.steps:
+                result = self.execute_plan(step, must_local=must_local)
+                if plan.result_cls is not None:
+                    last_valid_result = result
+            return last_valid_result
 
     async def loop(self) -> None:
         servicer = self.FrangoNodeServicer(self, asyncio.get_running_loop())
