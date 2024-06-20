@@ -9,6 +9,7 @@
 , grpcio
 , dataclass-wizard
 , sqlglot
+, rich
 
 , pytestCheckHook
 }:
@@ -36,6 +37,7 @@ buildPythonPackage {
     rraft-py
     dataclass-wizard
     sqlglot
+    rich
   ];
 
   nativeCheckInputs = [ pytestCheckHook ];

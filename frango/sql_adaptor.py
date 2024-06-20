@@ -9,6 +9,8 @@ def anno_to_type(anno: Any) -> exp.DataType.Type:
         return exp.DataType.Type.TEXT
     elif anno == int:
         return exp.DataType.Type.INT
+    elif anno == bool:
+        return exp.DataType.Type.BOOLEAN
     elif get_origin(anno) == list or get_origin(anno) == List:
         return exp.DataType.Type.TEXT  # we will join list with ','
     else:

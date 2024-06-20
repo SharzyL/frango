@@ -19,9 +19,19 @@ message QueryReq {
 }
 
 message QueryResp {
-    int32 error = 1;
+    optional string err_msg = 1;  // None implies success
     repeated string header = 2;
     repeated string rows_in_json = 3;
+    bool is_valid = 4;
+    bool is_error = 5;
+}
+
+message SubQueryCompleteReq {
+    enum Action {
+        COMMIT = 0;
+        ABORT = 1;
+    };
+    Action action = 1;
 }
 
 service FrangoNode {
@@ -31,4 +41,5 @@ service FrangoNode {
 
     // used for internode communication
     rpc SubQuery (QueryReq) returns (QueryResp);
+    rpc SubQueryComplete (SubQueryCompleteReq) returns (Empty);
 }

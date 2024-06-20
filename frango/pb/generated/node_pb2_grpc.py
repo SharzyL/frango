@@ -34,6 +34,11 @@ class FrangoNodeStub(object):
                 request_serializer=node__pb2.QueryReq.SerializeToString,
                 response_deserializer=node__pb2.QueryResp.FromString,
                 )
+        self.SubQueryComplete = channel.unary_unary(
+                '/frango.FrangoNode/SubQueryComplete',
+                request_serializer=node__pb2.SubQueryCompleteReq.SerializeToString,
+                response_deserializer=node__pb2.Empty.FromString,
+                )
 
 
 class FrangoNodeServicer(object):
@@ -64,6 +69,12 @@ class FrangoNodeServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SubQueryComplete(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_FrangoNodeServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -86,6 +97,11 @@ def add_FrangoNodeServicer_to_server(servicer, server):
                     servicer.SubQuery,
                     request_deserializer=node__pb2.QueryReq.FromString,
                     response_serializer=node__pb2.QueryResp.SerializeToString,
+            ),
+            'SubQueryComplete': grpc.unary_unary_rpc_method_handler(
+                    servicer.SubQueryComplete,
+                    request_deserializer=node__pb2.SubQueryCompleteReq.FromString,
+                    response_serializer=node__pb2.Empty.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -162,5 +178,22 @@ class FrangoNode(object):
         return grpc.experimental.unary_unary(request, target, '/frango.FrangoNode/SubQuery',
             node__pb2.QueryReq.SerializeToString,
             node__pb2.QueryResp.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def SubQueryComplete(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/frango.FrangoNode/SubQueryComplete',
+            node__pb2.SubQueryCompleteReq.SerializeToString,
+            node__pb2.Empty.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

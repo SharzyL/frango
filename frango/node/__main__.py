@@ -45,7 +45,7 @@ async def async_main() -> None:
             "User": args.bulk_load / "user.dat",
             "Read": args.bulk_load / "read.dat",
         }
-        frango_node.bulk_load(table_dat_files)
+        await frango_node.bulk_load(table_dat_files)
         frango_node.storage.commit()
 
     await frango_node.loop()

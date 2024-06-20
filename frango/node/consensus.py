@@ -148,7 +148,7 @@ class NodeConsensus:
 
         elif proposal.transfer_leader:
             # TODO: implement transfer leader.
-            raise NotImplementedError
+            raise NotImplementedError('transfer_leader not implemented')
 
         last_index2 = self.raft_group.get_raft().get_raft_log().last_index() + 1
 

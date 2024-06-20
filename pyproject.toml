@@ -12,6 +12,7 @@ dependencies = [
     "rraft-py>=0.2.27",
     "grpcio>=1.62.2",
     "sqlglot>=23.12.1",
+    "rich>=13.7.1",
 ]
 devDependencies = [
     "grpcio-tools>=1.64.0",
