@@ -1,19 +1,21 @@
-from typing import List, get_origin
+from typing import List, get_origin, Any
 
 from dataclass_wizard import JSONWizard
 import sqlglot.expressions as exp
 
 
-def anno_to_type(anno) -> exp.DataType.Type:
+def anno_to_type(anno: Any) -> exp.DataType.Type:
     if anno == str:
         return exp.DataType.Type.TEXT
     elif anno == int:
         return exp.DataType.Type.INT
     elif get_origin(anno) == list or get_origin(anno) == List:
         return exp.DataType.Type.TEXT  # we will join list with ','
+    else:
+        raise NotImplementedError(f'{anno} is not supported')
 
 
-class SQLDef(JSONWizard):
+class SQLDef(JSONWizard):  # type: ignore[misc]
     @classmethod
     def sql_insert_schema(cls) -> exp.Schema:
         cls_annotations = cls.__annotations__

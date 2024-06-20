@@ -4,30 +4,13 @@ from pathlib import Path
 from loguru import logger
 import sys
 
+from frango.sql_adaptor import SQLDef
 from frango.table_def import User, Article, Read
 from frango.node.node import FrangoNode
 from frango.config import get_config_default
 
 
-def load_data_from_basedir(base_dir: Path):
-    users = []
-    with open(base_dir / 'user.dat', 'r') as f:
-        for line in f.readlines():
-            users.append(User.from_json(line))
-
-    articles = []
-    with open(base_dir / 'article.dat', 'r') as f:
-        for line in f.readlines():
-            articles.append(Article.from_json(line))
-    print(articles[0])
-
-    reads = []
-    with open(base_dir / 'read.dat', 'r') as f:
-        for line in f.readlines():
-            reads.append(Read.from_json(line))
-
-
-async def async_main():
+async def async_main() -> None:
     parser = ArgumentParser(description='Frango node')
     parser.add_argument('--debug', action='store_true', help='enable debug mode')
     parser.add_argument('--create', action='store_true', help='create table')
@@ -51,6 +34,7 @@ async def async_main():
 
     if args.create:
         for cls in (Article, User, Read):
+            assert issubclass(cls, SQLDef)
             frango_node.storage.execute(cls.sql_drop_if_exists())
             frango_node.storage.execute(cls.sql_create())
         frango_node.storage.commit()
@@ -67,7 +51,7 @@ async def async_main():
     await frango_node.loop()
 
 
-def main():
+def main() -> None:
     asyncio.run(async_main())
 
 

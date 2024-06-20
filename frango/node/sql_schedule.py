@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Iterable, Type
+from typing import Dict, Optional, Iterable, TypeAlias, cast, Any, List
 
 import sqlglot
 import sqlglot.expressions as exp
@@ -6,34 +6,54 @@ import sqlglot.expressions as exp
 from frango.config import Config
 from frango.sql_adaptor import SQLDef
 
+ResultClsType: TypeAlias = Optional[type | str]
+
 
 class ExecutionPlan:
-    def __init__(self, result_cls: Type | str = None):
+    def __init__(self, result_cls: ResultClsType = None):
         # result_cls is a hint of how the execution output is parsed
         # When it is a string, it represents the table name that we do not know how to parse
         self.result_cls = result_cls
 
 
 class LocalExecutionPlan(ExecutionPlan):
-    def __init__(self, query: exp.Expression, result_cls: Type = None):
+    def __init__(self, query: exp.Expression, result_cls: ResultClsType = None):
         super().__init__(result_cls)
         self.query = query
 
 
 class DistributedExecutionPlan(ExecutionPlan):
-    def __init__(self, queries_for_node: Dict[int, exp.Expression], result_cls: Type = None):
+    def __init__(self, queries_for_node: Dict[int, exp.Expression], result_cls: ResultClsType = None):
         super().__init__(result_cls)
         self.queries_for_node = queries_for_node
 
 
 class SerialExecutionPlan(ExecutionPlan):
-    def __init__(self, steps: list[ExecutionPlan], result_cls: Type = None):
+    def __init__(self, steps: List[ExecutionPlan], result_cls: ResultClsType = None):
         super().__init__(result_cls)
         self.steps = steps
 
 
-def _sql_eval(expr: exp.Expression, item: Optional[SQLDef | dict]) -> int | float | bool | str:
-    def _getattr(v, k):
+SQLVal = int | float | bool | str
+
+
+def _ensure_numeral(v: SQLVal) -> int | float | bool:
+    assert isinstance(v, int) or isinstance(v, float) or isinstance(v, bool)
+    return v
+
+
+def _ensure_bool(v: SQLVal) -> bool:
+    assert isinstance(v, bool)
+    return v
+
+
+def _ensure_str(v: SQLVal) -> str:
+    assert isinstance(v, str)
+    return v
+
+
+def _sql_eval(expr: exp.Expression, item: Optional[SQLDef | Dict[str, SQLVal]]) -> SQLVal:
+    def _getattr(v: Any, k: str) -> Any:
         if isinstance(v, dict):
             return v[k]
         else:
@@ -45,20 +65,22 @@ def _sql_eval(expr: exp.Expression, item: Optional[SQLDef | dict]) -> int | floa
             return str(expr.this.this)
         else:
             assert item is not None
-            return _getattr(item, expr.this.this)
+            return cast(SQLVal, _getattr(item, expr.this.this))
     elif isinstance(expr, exp.Literal):
         if expr.is_string:
-            return expr.this
+            return _ensure_str(expr.this)
         elif '.' in expr.this:
             return float(expr.this)
         else:
             return int(expr.this)
     elif isinstance(expr, exp.Boolean):
-        return expr.this
+        return cast(bool, expr.this)
 
     # unary op
     elif isinstance(expr, exp.Neg):
-        return -_sql_eval(expr.this, item)
+        val = _sql_eval(expr.this, item)
+        assert isinstance(val, int) or isinstance(val, float)
+        return -val
 
     # binary op
     elif isinstance(expr, exp.EQ):
@@ -67,28 +89,28 @@ def _sql_eval(expr: exp.Expression, item: Optional[SQLDef | dict]) -> int | floa
         return _sql_eval(expr.this, item) != _sql_eval(expr.expression, item)
 
     elif isinstance(expr, exp.GT):
-        return _sql_eval(expr.this, item) > _sql_eval(expr.expression, item)
+        return _ensure_numeral(_sql_eval(expr.this, item)) > _ensure_numeral(_sql_eval(expr.expression, item))
     elif isinstance(expr, exp.LT):
-        return _sql_eval(expr.this, item) < _sql_eval(expr.expression, item)
+        return _ensure_numeral(_sql_eval(expr.this, item)) < _ensure_numeral(_sql_eval(expr.expression, item))
     elif isinstance(expr, exp.GTE):
-        return _sql_eval(expr.this, item) >= _sql_eval(expr.expression, item)
+        return _ensure_numeral(_sql_eval(expr.this, item)) >= _ensure_numeral(_sql_eval(expr.expression, item))
     elif isinstance(expr, exp.LTE):
-        return _sql_eval(expr.this, item) <= _sql_eval(expr.expression, item)
+        return _ensure_numeral(_sql_eval(expr.this, item)) <= _ensure_numeral(_sql_eval(expr.expression, item))
     elif isinstance(expr, exp.And):
-        return _sql_eval(expr.this, item) and _sql_eval(expr.expression, item)
+        return _ensure_bool(_sql_eval(expr.this, item)) and _ensure_bool(_sql_eval(expr.expression, item))
     elif isinstance(expr, exp.Or):
-        return _sql_eval(expr.this, item) or _sql_eval(expr.expression, item)
+        return _ensure_bool(_sql_eval(expr.this, item)) or _ensure_bool(_sql_eval(expr.expression, item))
     elif isinstance(expr, exp.Xor):
-        return _sql_eval(expr.this, item) ^ _sql_eval(expr.expression, item)
+        return _ensure_bool(_sql_eval(expr.this, item)) ^ _ensure_bool(_sql_eval(expr.expression, item))
     else:
-        return NotImplemented(f'`{expr}` is not supported')
+        raise NotImplementedError(f'`{expr}` is not supported')
 
 
-def sql_parse_one(stmt) -> exp.Expression:
+def sql_parse_one(stmt: str) -> exp.Expression:
     return sqlglot.parse_one(stmt, dialect='sqlite')
 
 
-def sql_parse(stmts) -> list[exp.Expression | None]:
+def sql_parse(stmts: str) -> list[exp.Expression | None]:
     return sqlglot.parse(stmts, dialect='sqlite')
 
 
@@ -101,20 +123,20 @@ def sql_to_str(sql: exp.Expression | Iterable[exp.Expression]) -> str:
         assert False
 
 
-def eval_literal(expr: exp.Expression):
+def eval_literal(expr: exp.Expression) -> SQLVal:
     if isinstance(expr, exp.Column):
         assert isinstance(expr.this, exp.Identifier)
         assert expr.this.quoted
         return str(expr.this.this)
     elif isinstance(expr, exp.Literal):
         if expr.is_string:
-            return expr.this
+            return _ensure_str(expr.this)
         elif '.' in expr.this:
             return float(expr.this)
         else:
             return int(expr.this)
     elif isinstance(expr, exp.Boolean):
-        return expr.this
+        return _ensure_bool(expr.this)
     else:
         assert False, f'unsupported expression {repr(expr)}'
 
@@ -131,7 +153,7 @@ class RegularTableSplitter:
     def partition_select_query(self, query: exp.Select) -> Dict[int, exp.Select]:
         return {node_id: self._restrict_select_with_rule(query, rule) for node_id, rule in self.rules.items()}
 
-    def get_belonging_nodes(self, item: dict | SQLDef) -> list[int]:
+    def get_belonging_nodes(self, item: Dict[str, SQLVal] | SQLDef) -> list[int]:
         nodes = []
         for node_id, rule in self.rules.items():
             if _sql_eval(rule, item):
@@ -148,9 +170,9 @@ class RegularTableSplitter:
 
 
 class Scheduler:
-    def __init__(self, partitions: dict[str, Config.Partition], node_id_list: list[int]):
+    def __init__(self, partitions: Dict[str, Config.Partition], node_id_list: list[int]):
         self.regular_table_partitioners: dict[str, RegularTableSplitter] = {}
-        self.dependent_partitions: dict[str, Config.Partition] = {}
+        self.dependent_partitions: Dict[str, Config.Partition] = {}
         for table_name, partition in partitions.items():
             if partition.type == "regular":
                 self.regular_table_partitioners[table_name] = RegularTableSplitter(partition, table_name)
@@ -160,8 +182,8 @@ class Scheduler:
                 assert False, f'unsupported partition type {partition.type}'
         self.node_id_list = node_id_list
 
-    def _find_data_to_load_from_dependent(self, table_name: str, data: list[SQLDef], dependent_table_name: str,
-                                          dependent_data: list[SQLDef], node_id: int) -> list[SQLDef]:
+    def _find_data_to_load_from_dependent(self, table_name: str, data: List[SQLDef], dependent_table_name: str,
+                                          dependent_data: List[SQLDef], node_id: int) -> List[SQLDef]:
         assert table_name in self.dependent_partitions
         assert dependent_table_name in self.regular_table_partitioners  # not supporting recursive dependency now
 
@@ -178,7 +200,7 @@ class Scheduler:
                 data_to_load.append(item)
         return data_to_load
 
-    def schedule_bulk_load_for_node(self, input_tables: dict[str, list[SQLDef]], node_id: int) -> ExecutionPlan:
+    def schedule_bulk_load_for_node(self, input_tables: Dict[str, list[SQLDef]], node_id: int) -> ExecutionPlan:
         regular_tables = {k: v for k, v in input_tables.items() if k in self.regular_table_partitioners}
         dependent_tables = {k: v for k, v in input_tables.items() if k in self.dependent_partitions}
         assert len(regular_tables) + len(dependent_tables) == len(input_tables)
@@ -213,7 +235,7 @@ class Scheduler:
     def schedule_query(self, query: str) -> ExecutionPlan:
         stmt_list = sql_parse(query)
 
-        steps = []
+        steps: List[ExecutionPlan] = []
         for stmt in stmt_list:
             # CREATE is for every node
             if isinstance(stmt, exp.Create):
@@ -234,7 +256,11 @@ class Scheduler:
                     }, result_cls=result_cls))
                 elif table_name in self.dependent_partitions:
                     dependent_table = self.dependent_partitions[table_name].dependentTable
-                    belonging_nodes: Iterable[int] = self.regular_table_partitioners[dependent_table].rules.keys()
+
+                    # mypy bug?
+                    belonging_nodes: Iterable[int] = (  # type: ignore[no-redef]
+                        self.regular_table_partitioners[dependent_table].rules.keys()
+                    )
                     steps.append(DistributedExecutionPlan({
                         node_id: stmt for node_id in belonging_nodes
                     }, result_cls=result_cls))
@@ -262,7 +288,7 @@ class Scheduler:
                 assert (isinstance(stmt.expression, exp.Values))
 
                 # collect tuples for each node
-                tuples_for_node = dict()
+                tuples_for_node: Dict[int, list[exp.Tuple]] = dict()
                 for node_id in self.node_id_list:
                     tuples_for_node.setdefault(node_id, [])
                 for tuple_ in stmt.expression.expressions:  # Insert -> Values -> Tuples
@@ -278,7 +304,7 @@ class Scheduler:
                 query_for_node = dict()
                 for node_id in self.node_id_list:
                     if tuples_for_node[node_id]:
-                        new_stmt = stmt.copy()
+                        new_stmt = stmt.copy()  # type: ignore[no-untyped-call]
                         new_stmt.set("expression", exp.Values(expressions=tuples_for_node[node_id]))
                         query_for_node[node_id] = new_stmt
                 steps.append(DistributedExecutionPlan(query_for_node))
@@ -288,6 +314,6 @@ class Scheduler:
                 raise NotImplemented
 
             else:
-                raise NotImplemented(f'{type(stmt)} is not supported')
+                raise NotImplementedError(f'{type(stmt)} is not supported')
 
         return SerialExecutionPlan(steps)

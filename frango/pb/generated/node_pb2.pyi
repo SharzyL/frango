@@ -18,10 +18,10 @@ class PingResp(_message.Message):
     def __init__(self, id: _Optional[int] = ..., leader_id: _Optional[int] = ...) -> None: ...
 
 class RRaftMessage(_message.Message):
-    __slots__ = ("bytes",)
-    BYTES_FIELD_NUMBER: _ClassVar[int]
-    bytes: bytes
-    def __init__(self, bytes: _Optional[bytes] = ...) -> None: ...
+    __slots__ = ("the_bytes",)
+    THE_BYTES_FIELD_NUMBER: _ClassVar[int]
+    the_bytes: bytes
+    def __init__(self, the_bytes: _Optional[bytes] = ...) -> None: ...
 
 class QueryReq(_message.Message):
     __slots__ = ("query_str",)
@@ -30,9 +30,11 @@ class QueryReq(_message.Message):
     def __init__(self, query_str: _Optional[str] = ...) -> None: ...
 
 class QueryResp(_message.Message):
-    __slots__ = ("success", "rows_in_json")
-    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("error", "header", "rows_in_json")
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    HEADER_FIELD_NUMBER: _ClassVar[int]
     ROWS_IN_JSON_FIELD_NUMBER: _ClassVar[int]
-    success: bool
+    error: int
+    header: _containers.RepeatedScalarFieldContainer[str]
     rows_in_json: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, success: bool = ..., rows_in_json: _Optional[_Iterable[str]] = ...) -> None: ...
+    def __init__(self, error: _Optional[int] = ..., header: _Optional[_Iterable[str]] = ..., rows_in_json: _Optional[_Iterable[str]] = ...) -> None: ...

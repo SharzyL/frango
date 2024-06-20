@@ -5,7 +5,7 @@ from frango.sql_adaptor import SQLDef
 
 
 @dataclass
-class Article(LoadMixin, SQLDef):
+class Article(LoadMixin, SQLDef):  # type: ignore[misc]
     id: str
     timestamp: int
     aid: int
@@ -19,7 +19,7 @@ class Article(LoadMixin, SQLDef):
     video: str
 
     @staticmethod
-    def __primary_key__():
+    def __primary_key__() -> str:
         return "aid"
 
 
@@ -41,7 +41,7 @@ class User(SQLDef):
     obtainedCredits: int
 
     @staticmethod
-    def __primary_key__():
+    def __primary_key__() -> str:
         return "uid"
 
 

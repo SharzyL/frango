@@ -10,5 +10,8 @@ gen-grpc:
     --grpc_python_out {{pb_gen_dir}} \
     {{pb_dir}}/node.proto
 
+  # Ref: https://github.com/protocolbuffers/protobuf/issues/1491
+  sed -i 's/import node_pb2/import frango.pb.generated.node_pb2/' {{pb_gen_dir}}/node_pb2_grpc.py
+
 clean-grpc:
   rm -rf {{pb_gen_dir}}

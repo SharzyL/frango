@@ -10,7 +10,8 @@ message PingResp {
 }
 
 message RRaftMessage {
-    bytes bytes = 1;
+    // avoid using name `bytes` which conflicts with python keyword
+    bytes the_bytes = 1;
 }
 
 message QueryReq {
@@ -18,7 +19,8 @@ message QueryReq {
 }
 
 message QueryResp {
-    bool success = 1;
+    int32 error = 1;
+    repeated string header = 2;
     repeated string rows_in_json = 3;
 }
 

@@ -16,15 +16,19 @@
         let
           pkgs = import nixpkgs { inherit system; overlays = [ overlay ]; };
           frango = pkgs.frango;
+          python3 = pkgs.python312;
         in
         {
           packages.default = frango;
           legacyPackages = pkgs;
           devShell = frango.overrideAttrs (oldAttrs: {
-            nativeBuildInputs = oldAttrs.nativeBuildInputs ++ [
-              (pkgs.pdm.override { python3 = pkgs.python312; })
-              pkgs.python312.pkgs.grpcio-tools
-            ];
+            nativeBuildInputs = oldAttrs.nativeBuildInputs ++ (with python3.pkgs; [
+              (pkgs.pdm.override { inherit python3; })
+              grpcio-tools
+              mypy
+              pytest
+              types-protobuf
+            ]);
           });
         }
       )

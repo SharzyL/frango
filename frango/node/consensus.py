@@ -31,7 +31,7 @@ class Proposal:
         self._propose_success: Queue[bool] = Queue(maxsize=1)
         self.proposed: Optional[int] = None  # Optional int of index in log
 
-    def send_success_signal(self, is_success: bool):
+    def send_success_signal(self, is_success: bool) -> None:
         if not self._propose_success.full():
             self._propose_success.put_nowait(is_success)
 
@@ -39,13 +39,13 @@ class Proposal:
         return await self._propose_success.get()
 
     @staticmethod
-    def conf_change(cc: rraft.ConfChange) -> Proposal:
+    def make_conf_change(cc: rraft.ConfChange) -> Proposal:
         return Proposal(
             conf_change=cc.clone(),
         )
 
     @staticmethod
-    def normal(key: int, value: str) -> Proposal:
+    def make_normal(key: int, value: str) -> Proposal:
         return Proposal(
             normal=(key, value),
         )
@@ -55,7 +55,7 @@ PeerStubs = Dict[int, node_grpc.FrangoNodeStub]
 
 
 class NodeConsensus:
-    def __init__(self, raft_group, peer_stubs: PeerStubs, config: RaftConfig) -> None:
+    def __init__(self, raft_group: rraft.InMemoryRawNode, peer_stubs: PeerStubs, config: RaftConfig) -> None:
         self.raft_group: rraft.InMemoryRawNode = raft_group
         self.config: RaftConfig = config
 
@@ -94,7 +94,7 @@ class NodeConsensus:
                 else:
                     logger.debug(f"sending msg to {get_to}: {msg}")
                 peer_stub = self._peer_stubs[get_to]
-                await peer_stub.RRaft(node_pb.RRaftMessage(bytes=msg.encode()))
+                await peer_stub.RRaft(node_pb.RRaftMessage(the_bytes=msg.encode()))
             except grpc.AioRpcError as e:
                 if e.code() == grpcStatus.UNAVAILABLE:
                     logger.warning(f"peer {get_to} not available")
@@ -158,11 +158,11 @@ class NodeConsensus:
         else:
             proposal.proposed = last_index1
 
-    async def _notify_ready(self):
+    async def _notify_ready(self) -> None:
         async with self._on_ready_cond:
             self._on_ready_cond.notify()
 
-    async def _wait_ready_loop(self):
+    async def _wait_ready_loop(self) -> None:
         while not self._stop_chan.full():
             # wait until ready
             async with self._on_ready_cond:
@@ -209,8 +209,9 @@ class NodeConsensus:
             await self._handle_committed_entries(light_rd.take_committed_entries(), store)
             self.raft_group.advance_apply()
 
-    def is_leader(self):
-        return self.raft_group.get_raft().get_state() == rraft.StateRole.Leader
+    def is_leader(self) -> bool:
+        # mypy bug here
+        return self.raft_group.get_raft().get_state() == rraft.StateRole.Leader  # type: ignore[no-any-return]
 
     async def propose(self, proposal: Proposal) -> None:
         async with self._become_leader_cond:
@@ -226,7 +227,7 @@ class NodeConsensus:
         else:
             logger.debug(f"recv msg from {msg.get_from()}: {msg}")
 
-        async def step():
+        async def step() -> None:
             async with self._raft_state_lock:
                 self.raft_group.step(msg)
             if self.raft_group.has_ready():

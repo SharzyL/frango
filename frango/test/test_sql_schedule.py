@@ -1,21 +1,22 @@
+from typing import Dict
 import unittest
 from dataclasses import dataclass
 
 import sqlglot.expressions as exp
 
-from frango.config import Partition
+from frango.config import Config
 from frango.sql_adaptor import SQLDef
 from frango.node.sql_schedule import (
     RegularTableSplitter, Scheduler, sql_to_str, sql_parse_one, _sql_eval,
-    SerialExecutionPlan, DistributedExecutionPlan, LocalExecutionPlan
+    SerialExecutionPlan, DistributedExecutionPlan, LocalExecutionPlan, SQLVal
 )
 
 
 # noinspection SqlNoDataSourceInspection
 class TestSplit(unittest.TestCase):
     # noinspection SqlResolve
-    def test_basic(self):
-        splitter = RegularTableSplitter(Partition(type="regular", filter={
+    def test_basic(self) -> None:
+        splitter = RegularTableSplitter(Config.Partition(type="regular", filter={
             1: "id > 4",
             2: "id <= 4"
         }), table_name="User")
@@ -27,16 +28,16 @@ class TestSplit(unittest.TestCase):
         self.assertEqual(sql_to_str(splits[2]),
                          "SELECT id, timestamp FROM Article WHERE (id > 3 AND name = 'harry') AND id <= 4")
 
-    def test_eval(self):
-        item = {"id": 1, "age": 4, "gender": "male"}
+    def test_eval(self) -> None:
+        item: Dict[str, SQLVal] = {"id": 1, "age": 4, "gender": "male"}
         self.assertEqual(_sql_eval(sql_parse_one("id == 1"), item), True)
         self.assertEqual(_sql_eval(sql_parse_one("id == 1 AND age < 5"), item), True)
         self.assertEqual(_sql_eval(sql_parse_one("id > 3 AND age < 5"), item), False)
         self.assertEqual(_sql_eval(sql_parse_one('gender == "male"'), item), True)
         self.assertEqual(_sql_eval(sql_parse_one("gender != 'female'"), item), True)
 
-    def test_find_partition(self):
-        splitter = RegularTableSplitter(Partition(type="regular", filter={
+    def test_find_partition(self) -> None:
+        splitter = RegularTableSplitter(Config.Partition(type="regular", filter={
             1: "id > 4",
             2: "id <= 4 AND gender == 'male'",
             3: "id <= 4 AND gender != 'male'",
@@ -49,14 +50,14 @@ class TestSplit(unittest.TestCase):
 # noinspection SqlNoDataSourceInspection
 class TestSchedule(unittest.TestCase):
     # noinspection SqlResolve
-    def test_basic(self):
+    def test_basic(self) -> None:
         partitions = {
-            "Person": Partition(type="regular", filter={
+            "Person": Config.Partition(type="regular", filter={
                 1: "id > 4",
                 2: "id <= 4 AND gender == 'male'",
                 3: "id <= 4 AND gender != 'male'",
             }),
-            "Article": Partition(type="regular", filter={
+            "Article": Config.Partition(type="regular", filter={
                 1: "aid > 100",
                 2: "aid <= 100"
             })
@@ -66,16 +67,16 @@ class TestSchedule(unittest.TestCase):
             SELECT id, timestamp FROM Article WHERE category == "music";
             INSERT INTO Article (aid, category) VALUES (100, "music"), (200, "politics");
         ''')
-        self.assertIsInstance(plan, SerialExecutionPlan)
+        assert isinstance(plan, SerialExecutionPlan)  # not using assertIsInstance since mypy does not support
         insertion_plan = plan.steps[1]
-        self.assertIsInstance(insertion_plan, DistributedExecutionPlan)
+        assert isinstance(insertion_plan, DistributedExecutionPlan)
         self.assertIn(1, insertion_plan.queries_for_node)
         self.assertIn(2, insertion_plan.queries_for_node)
         self.assertNotIn(3, insertion_plan.queries_for_node)
         self.assertIn("politics", sql_to_str(insertion_plan.queries_for_node[1]))
         self.assertIn("music", sql_to_str(insertion_plan.queries_for_node[2]))
 
-    def test_dependent(self):
+    def test_dependent(self) -> None:
         @dataclass
         class Person(SQLDef):
             id: int
@@ -87,12 +88,12 @@ class TestSchedule(unittest.TestCase):
             date: str
 
         partitions = {
-            "Person": Partition(type="regular", filter={
+            "Person": Config.Partition(type="regular", filter={
                 1: "id > 4",
                 2: "id <= 4 AND gender == 'male'",
                 3: "id <= 4 AND gender != 'male'",
             }),
-            "Read": Partition(type="dependent", dependentKey="id", dependentTable="Person")
+            "Read": Config.Partition(type="dependent", dependentKey="id", dependentTable="Person")
         }
         sch = Scheduler(partitions, node_id_list=[1, 2, 3])
         persons = [
@@ -111,15 +112,15 @@ class TestSchedule(unittest.TestCase):
             Read(4, "2004"),
         ]
 
-        def verify_plan(node_id, person_inserts, read_inserts):
+        def verify_plan(node_id: int, person_inserts: int, read_inserts: int) -> None:
             plan = sch.schedule_bulk_load_for_node({"Person": persons, "Read": reads}, node_id)
-            self.assertIsInstance(plan, SerialExecutionPlan)
+            assert isinstance(plan, SerialExecutionPlan)
             step_person = plan.steps[0]
-            self.assertIsInstance(step_person, LocalExecutionPlan)
+            assert isinstance(step_person, LocalExecutionPlan)
             self.assertEqual(len(step_person.query.args['_params']), person_inserts)
 
             step_read = plan.steps[1]
-            self.assertIsInstance(step_read, LocalExecutionPlan)
+            assert isinstance(step_read, LocalExecutionPlan)
             self.assertEqual(len(step_read.query.args['_params']), read_inserts)
 
         verify_plan(1, 2, 1)

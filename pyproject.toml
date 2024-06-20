@@ -15,23 +15,35 @@ dependencies = [
 ]
 devDependencies = [
     "grpcio-tools>=1.64.0",
+    "types-protobuf>=5.26.0.20240422",
+    "mypy>=1.10.0",
+    "pytest>=8.2.2",
 ]
 
 [project.scripts]
 frango-node = "frango.node:main"
 frango-cli = "frango.client.cli:main"
 
-[tool.pdm.scripts]
-node = { call = "frango.node:main" }
-cli = { call = "frango.client.cli:main" }
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.mypy]
+python_version = 3.12
+overrides = [
+    { module = "dataclass_wizard.*", ignore_missing_imports = true },
+    { module = "grpc.*", ignore_missing_imports = true },
+    { module = "frango.pb.generated.*", disallow_untyped_defs = false },
+]
 
 [tool.pdm]
 distribution = true
 
+[tool.pdm.scripts]
+node = { call = "frango.node:main" }
+cli = { call = "frango.client.cli:main" }
+test = { cmd = "pytest" }
+
 [tool.pdm.build]
 includes = [ "frango/" ]
-
-[build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
 

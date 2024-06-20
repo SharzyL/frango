@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from dataclass_wizard import fromdict
-from typing import List, Optional
+from typing import List, Optional, cast
 from pathlib import Path
 
 import tomllib
@@ -23,7 +23,7 @@ class Config:
         type: str
 
         # valid if type == "regular"
-        filter: dict[int, str] = field(default_factory=list)
+        filter: dict[int, str] = field(default_factory=dict)
 
         # valid if type == "dependent"
         dependentTable: str = field(default="")
@@ -41,7 +41,7 @@ DEFAULT_CONFIG_PATH = "./etc/default.toml"
 def get_config(path: str | Path) -> Config:
     with open(path, "rb") as f:
         data = tomllib.load(f)
-        return fromdict(Config, data)
+        return cast(Config, fromdict(Config, data))
 
 
 def get_config_default(path: Optional[str | Path]) -> Config:

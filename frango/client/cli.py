@@ -8,21 +8,21 @@ from frango.pb import node_pb, node_grpc
 from frango.config import DEFAULT_CONFIG_PATH, get_config
 
 
-def ping(stub: node_grpc.FrangoNodeStub):
+def ping(stub: node_grpc.FrangoNodeStub) -> None:
     start = time.time()
     ping_resp: node_pb.PingResp = stub.Ping(node_pb.Empty())
     ms = (time.time() - start) * 1000
     logger.info(f'Ping ({ms:.2f} ms): id={ping_resp.id}, leader_id={ping_resp.leader_id}')
 
 
-def query(stub: node_grpc.FrangoNodeStub, query_str: str):
+def query(stub: node_grpc.FrangoNodeStub, query_str: str) -> None:
     start = time.time()
     ping_resp: node_pb.PingResp = stub.Ping(node_pb.Empty())
     ms = (time.time() - start) * 1000
     logger.info(f'Ping ({ms:.2f} ms): id={ping_resp.id}, leader_id={ping_resp.leader_id}')
 
 
-def main():
+def main() -> None:
     parser = ArgumentParser(description='Frango API client')
     parser.add_argument('-c', '--config', type=str, help='configuration file path',
                         default=DEFAULT_CONFIG_PATH)
@@ -42,7 +42,7 @@ def main():
     config = get_config(args.config)
     peers_dict = {peer.node_id: peer for peer in config.peers}
     listen = peers_dict[args.i].listen if args.i else config.peers[0].listen
-    stub = node_grpc.FrangoNodeStub(channel=grpc.insecure_channel(listen))
+    stub = node_grpc.FrangoNodeStub(channel=grpc.insecure_channel(listen))  # type: ignore[no-untyped-call]
 
     if args.command == 'ping':
         ping(stub)

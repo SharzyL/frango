@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import node_pb2 as node__pb2
+import frango.pb.generated.node_pb2 as node__pb2
 
 
 class FrangoNodeStub(object):

@@ -8,7 +8,7 @@ from frango.node.sql_schedule import sql_to_str
 
 # noinspection SqlNoDataSourceInspection
 class TestSQLGen(unittest.TestCase):
-    def test_basic(self):
+    def test_basic(self) -> None:
         insert_schema = Article.sql_insert_schema()
         self.assertIsInstance(insert_schema, exp.Schema)
         self.assertEqual(sql_to_str(insert_schema),
@@ -24,7 +24,7 @@ class TestSQLGen(unittest.TestCase):
 
         article = Article(id="a1", timestamp=1, aid=1, title="Hello", category="World",
                           abstract="Hello", articleTags="tag", authors="John", language="English",
-                          image=['img1', 'img2'], video=['video1', 'video2'])
+                          image='img1,img2', video='video1,video2')
         insert_tuple = article.sql_insert_tuple()
         self.assertIsInstance(insert_tuple, exp.Tuple)
         self.assertEqual(sql_to_str(insert_tuple), "('a1', 1, 1, 'Hello', 'World', 'Hello', 'tag', 'John', "
