@@ -5,10 +5,10 @@ from dataclasses import dataclass
 import sqlglot.expressions as exp
 
 from frango.config import Config
-from frango.sql_adaptor import SQLDef
+from frango.sql_adaptor import SQLDef, PARAMS_ARG_KEY, sql_to_str, sql_parse_one
 from frango.node.scheduler import (
-    RegularTableSplitter, Scheduler, sql_to_str, sql_parse_one, _sql_eval,
-    SerialExecutionPlan, DistributedExecutionPlan, LocalExecutionPlan, SQLVal
+    RegularTableSplitter, Scheduler,
+    SerialExecutionPlan, DistributedExecutionPlan, LocalExecutionPlan,
 )
 
 
@@ -27,14 +27,6 @@ class TestSplit(unittest.TestCase):
                          "SELECT id, timestamp FROM Article WHERE (id > 3 AND name = 'harry') AND id > 4")
         self.assertEqual(sql_to_str(splits[2]),
                          "SELECT id, timestamp FROM Article WHERE (id > 3 AND name = 'harry') AND id <= 4")
-
-    def test_eval(self) -> None:
-        item: Dict[str, SQLVal] = {"id": 1, "age": 4, "gender": "male"}
-        self.assertEqual(_sql_eval(sql_parse_one("id == 1"), item), True)
-        self.assertEqual(_sql_eval(sql_parse_one("id == 1 AND age < 5"), item), True)
-        self.assertEqual(_sql_eval(sql_parse_one("id > 3 AND age < 5"), item), False)
-        self.assertEqual(_sql_eval(sql_parse_one('gender == "male"'), item), True)
-        self.assertEqual(_sql_eval(sql_parse_one("gender != 'female'"), item), True)
 
     def test_find_partition(self) -> None:
         splitter = RegularTableSplitter(Config.Partition(type="regular", filter={
@@ -64,8 +56,8 @@ class TestSchedule(unittest.TestCase):
         }
         sch = Scheduler(partitions, node_id_list=[1, 2, 3])
         plan = sch.schedule_query('''
-            SELECT id, timestamp FROM Article WHERE category == "music";
-            INSERT INTO Article (aid, category) VALUES (100, "music"), (200, "politics");
+            SELECT id, timestamp FROM Article WHERE category == 'music';
+            INSERT INTO Article (aid, category) VALUES (100, 'music'), (200, 'politics');
         ''')
         assert isinstance(plan, SerialExecutionPlan)  # not using assertIsInstance since mypy does not support
         insertion_plan = plan.steps[1]
@@ -112,20 +104,38 @@ class TestSchedule(unittest.TestCase):
             Read(4, "2004"),
         ]
 
-        def verify_plan(node_id: int, person_inserts: int, read_inserts: int) -> None:
+        def verify_bulk_load_plan(node_id: int, person_inserts: int, read_inserts: int) -> None:
             plan = sch.schedule_bulk_load_for_node({"Person": persons, "Read": reads}, node_id)
             assert isinstance(plan, SerialExecutionPlan)
             step_person = plan.steps[0]
             assert isinstance(step_person, LocalExecutionPlan)
-            self.assertEqual(len(step_person.query.args['_params']), person_inserts)
+            self.assertEqual(len(step_person.query.args[PARAMS_ARG_KEY]), person_inserts)
 
             step_read = plan.steps[1]
             assert isinstance(step_read, LocalExecutionPlan)
-            self.assertEqual(len(step_read.query.args['_params']), read_inserts)
+            self.assertEqual(len(step_read.query.args[PARAMS_ARG_KEY]), read_inserts)
 
-        verify_plan(1, 2, 1)
-        verify_plan(2, 1, 1)
-        verify_plan(3, 2, 3)
+        verify_bulk_load_plan(1, 2, 1)
+        verify_bulk_load_plan(2, 1, 1)
+        verify_bulk_load_plan(3, 2, 3)
+
+        insert_plan = sch.schedule_query("INSERT INTO Read (id, date) VALUES (100, '2001')")
+        assert isinstance(insert_plan, SerialExecutionPlan)
+        self.assertEqual(len(insert_plan.steps), 1)
+        step0 = insert_plan.steps[0]
+        assert isinstance(step0, DistributedExecutionPlan)
+        self.assertEqual(
+            sql_to_str(step0.queries_for_node[1]),
+            "INSERT INTO Read (id, date) SELECT 100, '2001' FROM Person WHERE id = 100 AND Person.id > 4"
+        )
+        self.assertEqual(
+            sql_to_str(step0.queries_for_node[2]),
+            "INSERT INTO Read (id, date) SELECT 100, '2001' FROM Person WHERE id = 100 AND Person.id <= 4 AND Person.gender = 'male'"
+        )
+        self.assertEqual(
+            sql_to_str(step0.queries_for_node[3]),
+            "INSERT INTO Read (id, date) SELECT 100, '2001' FROM Person WHERE id = 100 AND Person.id <= 4 AND Person.gender <> 'male'"
+        )
 
 
 if __name__ == '__main__':

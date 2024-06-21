@@ -5,7 +5,7 @@ from loguru import logger
 import sys
 
 from frango.sql_adaptor import SQLDef
-from frango.table_def import User, Article, Read
+from frango.table_def import User, Article, Read, BeRead, PopularRank
 from frango.node.node import FrangoNode
 from frango.config import get_config_default
 
@@ -33,7 +33,7 @@ async def async_main() -> None:
     frango_node = FrangoNode(args.i, config, known_classes=known_classes)
 
     if args.create:
-        for cls in (Article, User, Read):
+        for cls in (Article, User, Read, BeRead):
             assert issubclass(cls, SQLDef)
             frango_node.storage.execute(cls.sql_drop_if_exists())
             frango_node.storage.execute(cls.sql_create())

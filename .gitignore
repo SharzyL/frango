@@ -3,3 +3,4 @@
 __pycache__
 result
 /.run
+.dmypy.json

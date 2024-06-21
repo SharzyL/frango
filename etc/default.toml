@@ -8,25 +8,23 @@ db_path_pattern = ".run/node_{{node_id}}/db.sqlite3"
 
 [partitions.User]
 type = "regular"
-filter.1 = 'region == "Hong Kong"'
-filter.2 = 'region == "Beijing"'
+filter.1 = "region == 'Hong Kong'"
+filter.2 = "region == 'Beijing'"
 
 [partitions.Article]
 type = "regular"
-filter.1 = 'category == "science"'
-filter.2 = 'category == "technology"'
+filter.1 = "category == 'science'"
+filter.2 = "category == 'technology'"
 
 [partitions.Read]
 type = "dependent"
 dependentTable = "User"
 dependentKey = "uid"
 
-[partitions.BeRead]
-type = "dependent"
-dependentTable = "Article"
-dependentKey = "aid"
-
 [partitions.PopularRank]
 type = "regular"
-filter.1 = 'temporaGranularity == "daily"'
-filter.2 = 'temporaGranularity == "weekly" OR temporaGranularity == "monthly"'
+filter.1 = "temporaGranularity == 'daily'"
+filter.2 = "temporaGranularity == 'weekly' OR temporaGranularity == 'monthly'"
+
+[partitions.BeRead]
+type = "replicate"

@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 from asyncio import Queue
 from pathlib import Path
-from typing import Dict, Tuple, Optional, TypeAlias, Union, Any, Callable, TypeVar, ParamSpec, Awaitable, Iterable
+from typing import (Dict, Tuple, Optional, TypeAlias, Union, Any, TypeVar,
+                    ParamSpec, Awaitable, Iterable, Sequence, Callable)
 
 import grpc.aio as grpc
 from loguru import logger
@@ -14,9 +15,9 @@ from frango.pb import node_pb, node_grpc
 from frango.sql_adaptor import SQLDef
 from frango.table_def import Article, User, Read
 
+from frango.sql_adaptor import sql_to_str, sql_parse_one
 from frango.node.scheduler import (
-    Scheduler, sql_parse_one, sql_to_str,
-    SerialExecutionPlan, LocalExecutionPlan, DistributedExecutionPlan, ExecutionPlan,
+    Scheduler, SerialExecutionPlan, LocalExecutionPlan, DistributedExecutionPlan, ExecutionPlan,
 )
 from frango.node.consensus import NodeConsensus
 from frango.node.storage import StorageBackend, ExecutionResult
@@ -45,7 +46,7 @@ class FrangoNode:
             return await result_queue.get()
 
         @staticmethod
-        def log_request(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+        def catch_request(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
             async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
                 try:
                     res = await func(*args, **kwargs)
@@ -56,11 +57,11 @@ class FrangoNode:
 
             return wrapper
 
-        @log_request
+        @catch_request
         async def Ping(self, request: node_pb.Empty, context: grpc.ServicerContext) -> node_pb.PingResp:
             return node_pb.PingResp(id=self.node.node_id, leader_id=self.node.consensus.leader_id())
 
-        @log_request
+        @catch_request
         async def RRaft(self, request: node_pb.RRaftMessage, context: grpc.ServicerContext) -> node_pb.Empty:
             msg = rraft.Message.decode(request.the_bytes)
             self.node.consensus.on_receive_msg(msg, self.event_loop)
@@ -72,10 +73,10 @@ class FrangoNode:
                 result = await self._execute_query(plan)
                 return result.to_pb()
             except Exception as e:
-                logger.error(f'Error on handling query `{request.query_str}`: {repr(e)}')
+                logger.exception(f'Error on handling query `{request.query_str}`: {repr(e)}')
                 return node_pb.QueryResp(err_msg=str(e), is_error=True)
 
-        @log_request
+        @catch_request
         async def SubQuery(self, request: node_pb.QueryReq, context: grpc.ServicerContext) -> node_pb.QueryResp:
             # SubQuery must be totally local
             query = sql_parse_one(request.query_str)
@@ -83,7 +84,7 @@ class FrangoNode:
             result = await self._execute_query(plan)
             return result.to_pb()
 
-        @log_request
+        @catch_request
         async def SubQueryComplete(self, request: node_pb.SubQueryCompleteReq,
                                    context: grpc.ServicerContext) -> node_pb.Empty:
             action = request.action
@@ -121,22 +122,23 @@ class FrangoNode:
             if node_id != self_node_id
         }
 
+        self.known_classes: Dict[str, type] = known_classes or dict()
         self.consensus: NodeConsensus = NodeConsensus(self._make_rraft_config(), self.peer_stubs, config.raft)
-        self.scheduler: Scheduler = Scheduler(config.partitions, node_id_list=list(peers_dict.keys()))
+        self.scheduler: Scheduler = Scheduler(config.partitions, node_id_list=list(peers_dict.keys()),
+                                              known_classes=self.known_classes)
 
         db_path = Path(config.db_path_pattern.replace('{{node_id}}', str(self_node_id)))
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.storage = StorageBackend(db_path)
 
         self.listen: str = peer_self.listen
-        self.known_classes: Dict[str, type] = known_classes or dict()
 
         self._stop_chan: Queue[None] = Queue(maxsize=1)
 
     async def bulk_load(self, table_dat_files: Dict[str, Path]) -> None:
         known_tables = [Article, User, Read]
         known_table_idx = {cls.__name__: cls for cls in known_tables}
-        tables: Dict[str, list[SQLDef]] = dict()
+        tables: Dict[str, Sequence[SQLDef]] = dict()
         for table_name, dat_file in table_dat_files.items():
             cls = known_table_idx[table_name]
             table = []

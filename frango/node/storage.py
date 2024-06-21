@@ -5,13 +5,13 @@ from dataclasses import dataclass, field
 import sqlite3
 from pathlib import Path
 import json
-from typing import Optional, List, Sequence, Tuple, Callable, Any
+from typing import Optional, List, Sequence
 
 from loguru import logger
 import sqlglot.expressions as exp
 
-from frango.node.scheduler import sql_to_str, SQLVal
 from frango.pb import node_pb
+from frango.sql_adaptor import PARAMS_ARG_KEY, sql_to_str, SQLVal
 
 
 @dataclass
@@ -61,13 +61,13 @@ class StorageBackend:
         def execute_one(stmt_: exp.Expression) -> None:
             stmt_str = sql_to_str(stmt_)
             # handle parametrized query
-            if '_params' in stmt_.args:
-                params = stmt_.args.get('_params')
+            if PARAMS_ARG_KEY in stmt_.args:
+                params = stmt_.args.get(PARAMS_ARG_KEY)
                 if isinstance(params, dict):
                     logger.info(f'sql execute: `{stmt_str}` with params: {params}')
                     cursor.execute(stmt_str, params)
                 elif isinstance(params, list):
-                    logger.info(f'sql execute: `{stmt_str}` with {len(params)} params')
+                    logger.info(f'sql executemany: `{stmt_str}` with {len(params)} params (params[0] = {params[0]}')
                     cursor.executemany(stmt_str, params)
                 else:
                     raise ValueError(f'sql execute: `{stmt_str}` with unknown params type: params={params}')
@@ -88,7 +88,8 @@ class StorageBackend:
             rows: List[Sequence[SQLVal]] = cursor.fetchall()
             header = [i[0] for i in cursor.description] if cursor.description is not None else []
             is_valid = cursor.description is not None
-            logger.info(f'sql returns with header: {header}, {len(rows)} rows')
+            if is_valid:
+                logger.info(f'sql returns with header: {header}, {len(rows)} rows')
             return ExecutionResult(err_msg=None, rows=rows, header=header, is_valid=is_valid)
 
         except sqlite3.Error as e:

@@ -1,13 +1,22 @@
 import unittest
+from typing import Dict
 
 import sqlglot.expressions as exp
 
 from frango.table_def import Article
-from frango.node.scheduler import sql_to_str
+from frango.sql_adaptor import sql_eval, sql_parse_one, SQLVal, sql_to_str
 
 
 # noinspection SqlNoDataSourceInspection
 class TestSQLGen(unittest.TestCase):
+    def test_eval(self) -> None:
+        item: Dict[str, SQLVal] = {"id": 1, "age": 4, "gender": "male"}
+        self.assertEqual(sql_eval(sql_parse_one("id == 1"), item), True)
+        self.assertEqual(sql_eval(sql_parse_one("id == 1 AND age < 5"), item), True)
+        self.assertEqual(sql_eval(sql_parse_one("id > 3 AND age < 5"), item), False)
+        self.assertEqual(sql_eval(sql_parse_one("gender == 'male'"), item), True)
+        self.assertEqual(sql_eval(sql_parse_one("gender != 'female'"), item), True)
+
     def test_basic(self) -> None:
         insert_schema = Article.sql_insert_schema()
         self.assertIsInstance(insert_schema, exp.Schema)
