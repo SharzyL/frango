@@ -6,7 +6,7 @@ import sqlglot.expressions as exp
 
 from frango.config import Config
 from frango.sql_adaptor import SQLDef
-from frango.node.sql_schedule import (
+from frango.node.scheduler import (
     RegularTableSplitter, Scheduler, sql_to_str, sql_parse_one, _sql_eval,
     SerialExecutionPlan, DistributedExecutionPlan, LocalExecutionPlan, SQLVal
 )

@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import asyncio
 from asyncio import Queue
 from pathlib import Path
-from typing import Dict, Tuple, Optional, TypeAlias, Union, Any, Callable, TypeVar, ParamSpec, Awaitable
+from typing import Dict, Tuple, Optional, TypeAlias, Union, Any, Callable, TypeVar, ParamSpec, Awaitable, Iterable
 
 import grpc.aio as grpc
 from loguru import logger
@@ -12,15 +14,15 @@ from frango.pb import node_pb, node_grpc
 from frango.sql_adaptor import SQLDef
 from frango.table_def import Article, User, Read
 
-from frango.node.sql_schedule import (
+from frango.node.scheduler import (
     Scheduler, sql_parse_one, sql_to_str,
     SerialExecutionPlan, LocalExecutionPlan, DistributedExecutionPlan, ExecutionPlan,
 )
 from frango.node.consensus import NodeConsensus
-from frango.node.storage import StorageBackend, QueryResult
+from frango.node.storage import StorageBackend, ExecutionResult
 
 Action: TypeAlias = node_pb.SubQueryCompleteReq.Action
-ExecutorMessage: TypeAlias = Tuple[Union[ExecutionPlan, Action], Queue[QueryResult]]
+ExecutorMessage: TypeAlias = Tuple[Union[ExecutionPlan, Action], Queue[ExecutionResult]]
 
 F = TypeVar('F', bound=Callable[..., Any])
 P = ParamSpec('P')
@@ -29,15 +31,15 @@ T = TypeVar('T')
 
 class FrangoNode:
     class FrangoNodeServicer(node_grpc.FrangoNodeServicer):
-        def __init__(self, node: "FrangoNode", event_loop: asyncio.AbstractEventLoop,
+        def __init__(self, node: FrangoNode, event_loop: asyncio.AbstractEventLoop,
                      executor_chan: Queue[ExecutorMessage]):
             super().__init__()
             self.node = node
             self.event_loop = event_loop
             self.executor_chan = executor_chan
 
-        async def _execute_query(self, plan: ExecutionPlan) -> QueryResult:
-            result_queue: Queue[QueryResult] = Queue(maxsize=1)
+        async def _execute_query(self, plan: ExecutionPlan) -> ExecutionResult:
+            result_queue: Queue[ExecutionResult] = Queue(maxsize=1)
 
             await self.executor_chan.put((plan, result_queue))
             return await result_queue.get()
@@ -82,7 +84,7 @@ class FrangoNode:
         async def SubQueryComplete(self, request: node_pb.SubQueryCompleteReq,
                                    context: grpc.ServicerContext) -> node_pb.Empty:
             action = request.action
-            result_queue: Queue[QueryResult] = Queue(maxsize=1)
+            result_queue: Queue[ExecutionResult] = Queue(maxsize=1)
             await self.executor_chan.put((action, result_queue))
             await result_queue.get()
             return node_pb.Empty()
@@ -145,13 +147,16 @@ class FrangoNode:
         plan = self.scheduler.schedule_bulk_load_for_node(tables, self.node_id)
         await self._execute_plan(plan)
 
-    def _storage_action(self, action: int) -> None:
-        if action == Action.ABORT:
-            self.storage.rollback()
-        elif action == Action.COMMIT:
-            self.storage.commit()
-        else:
-            assert False, f'Unknown action {action}'
+    async def _finalize(self, is_error: bool, nodes: Iterable[int]) -> None:
+        for node_id_ in nodes:
+            if node_id_ == self.node_id:  # local node
+                if is_error:
+                    self.storage.rollback()
+                else:
+                    self.storage.commit()
+            else:
+                action = Action.ABORT if is_error else Action.COMMIT
+                await self.peer_stubs[node_id_].SubQueryComplete(node_pb.SubQueryCompleteReq(action=action))
 
     async def executor_loop(self, stop_chan: Queue[None], query_chan: Queue[ExecutorMessage]) -> None:
         while stop_chan.empty():
@@ -160,10 +165,10 @@ class FrangoNode:
                 result = await self._execute_plan(execute)
                 await result_chan.put(result)
             else:
-                self._storage_action(execute)
-                await result_chan.put(QueryResult())
+                await self._finalize(execute == Action.ABORT, (self.node_id,))
+                await result_chan.put(ExecutionResult())  # empty response
 
-    async def _execute_distributed_plan(self, plan: DistributedExecutionPlan) -> QueryResult:
+    async def _execute_distributed_plan(self, plan: DistributedExecutionPlan) -> ExecutionResult:
         # 1. make a raft propose
         # 2. wait for propose commit
         # 3. distribute subquery
@@ -172,16 +177,22 @@ class FrangoNode:
         raise NotImplementedError
 
     # Note: this is not thread safe, hence we need a loop
-    async def _execute_plan(self, plan: ExecutionPlan) -> QueryResult:
+    async def _execute_plan(self, plan: ExecutionPlan) -> ExecutionResult:
         if isinstance(plan, LocalExecutionPlan):
-            return self.storage.execute(plan.query)
+            local_result = self.storage.execute(plan.query)
+            if plan.auto_commit:
+                await self._finalize(local_result.is_error, (self.node_id,))
+            return local_result
 
         elif isinstance(plan, DistributedExecutionPlan):
-            result: Optional[QueryResult] = None
+            if len(plan.queries_for_node) == 0:
+                return ExecutionResult()  # empty response for empty plan
+
+            distri_result: Optional[ExecutionResult] = None
 
             # TODO: make it parallel
             for node_id, subquery in plan.queries_for_node.items():
-                new_result: Optional[QueryResult] = None
+                new_result: Optional[ExecutionResult] = None
 
                 # execute
                 if node_id == self.node_id:
@@ -189,33 +200,48 @@ class FrangoNode:
                 else:
                     query_req = node_pb.QueryReq(query_str=sql_to_str(subquery))
                     resp: node_pb.QueryResp = await self.peer_stubs[node_id].SubQuery(query_req)
-                    new_result = QueryResult.from_pb(resp)
+                    new_result = ExecutionResult.from_pb(resp)
 
                 assert new_result is not None
-                if result is None:
-                    result = new_result
+                if distri_result is None:
+                    distri_result = new_result
                 else:
-                    result.merge(new_result)
+                    distri_result.merge(new_result)
 
-            assert result is not None
-            action = Action.ABORT if result.is_error else Action.COMMIT
-            for node_id in plan.queries_for_node.keys():
-                if node_id == self.node_id:
-                    self._storage_action(action)
-                else:
-                    await self.peer_stubs[node_id].SubQueryComplete(node_pb.SubQueryCompleteReq(action=action))
+            assert distri_result is not None  # it must be non-null when plan is not empty
+            if plan.auto_commit:
+                await self._finalize(distri_result.is_error, plan.queries_for_node.keys())
 
-            return result
+            return distri_result
 
         elif isinstance(plan, SerialExecutionPlan):
-            last_valid_result: QueryResult = QueryResult()
+            if len(plan.steps) == 0:
+                return ExecutionResult()  # empty response for empty plan
+
+            involved_nodes: set[int] = set()
+
+            serial_result: Optional[ExecutionResult] = None
             for step in plan.steps:
-                result = await self._execute_plan(step)
-                if result.is_error:
-                    return result  # return error immediately, without previous results
-                elif result.is_valid:
-                    last_valid_result = result
-            return last_valid_result
+                serial_result = await self._execute_plan(step)
+
+                if isinstance(step, LocalExecutionPlan):
+                    involved_nodes.add(self.node_id)
+                elif isinstance(step, DistributedExecutionPlan):
+                    involved_nodes.update(step.queries_for_node.keys())
+                else:
+                    assert False, f'not knowing how to determine involved nodes for {step.__class__.__name__}'
+
+                assert serial_result is not None
+                if serial_result.is_error:
+                    break
+
+            assert serial_result is not None  # it must be non-null when plan is not empty
+
+            if plan.auto_commit:
+                await self._finalize(serial_result.is_error, involved_nodes)
+
+            return serial_result
+
         else:
             raise NotImplementedError(f'{plan.__class__.__name__} is not supported')
 

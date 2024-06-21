@@ -19,7 +19,7 @@ def ping(stub: node_grpc.FrangoNodeStub) -> None:
     logger.info(f'Ping ({ms:.2f} ms): id={ping_resp.id}, leader_id={ping_resp.leader_id}')
 
 
-def query(stub: node_grpc.FrangoNodeStub, query_str: str) -> None:
+def query(stub: node_grpc.FrangoNodeStub, query_str: str, max_display_rows: int) -> None:
     start = time.time()
     query_req = node_pb.QueryReq(query_str=query_str)
     query_resp: node_pb.QueryResp = stub.Query(query_req)
@@ -34,11 +34,19 @@ def query(stub: node_grpc.FrangoNodeStub, query_str: str) -> None:
         for col_name in query_resp.header:
             table.add_column(col_name)
 
-        for row_json in query_resp.rows_in_json:
+        for i, row_json in enumerate(query_resp.rows_in_json):
             row = json.loads(row_json)
-            assert isinstance(row,  list)
+            assert isinstance(row, list)
             assert len(row) == len(query_resp.header), f'row length {len(row)} != {len(query_resp.header)}'
-            table.add_row(*row)
+            # print i = 0, 1, ..., max_display_rows - 3
+            # then print a row of ellipses
+            # then print the final two rows
+            if i == max_display_rows:
+                table.add_row(*(["..."] * len(query_resp.header)))
+            elif 0 <= max_display_rows < i < len(query_resp.rows_in_json) - 2:
+                pass
+            else:
+                table.add_row(*map(str, row))
 
         logger.info(f'{table}')
         console = Console()
@@ -59,6 +67,8 @@ def main() -> None:
     # query command
     query_parser = subparsers.add_parser('query', help='Query command')
     query_parser.add_argument('query_arg', type=str, help='Query argument')
+    query_parser.add_argument('--max-rows', type=int, default=50,
+                              help='Max rows to display on console, set to negative to disable')
 
     args = parser.parse_args()
 
@@ -70,7 +80,7 @@ def main() -> None:
     if args.command == 'ping':
         ping(stub)
     elif args.command == 'query':
-        query(stub, args.query_arg)
+        query(stub, args.query_arg, args.max_rows)
     else:
         logger.error(f'Unknown command {args.command}')
         parser.print_help()

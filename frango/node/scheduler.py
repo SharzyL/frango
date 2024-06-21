@@ -17,21 +17,25 @@ class ExecutionPlan:
 
 
 class LocalExecutionPlan(ExecutionPlan):
-    def __init__(self, query: exp.Expression, result_cls: ResultClsType = None):
+    def __init__(self, query: exp.Expression, auto_commit: bool = False, result_cls: ResultClsType = None):
         super().__init__(result_cls)
         self.query = query
+        self.auto_commit = auto_commit
 
 
 class DistributedExecutionPlan(ExecutionPlan):
-    def __init__(self, queries_for_node: Dict[int, exp.Expression], result_cls: ResultClsType = None):
+    def __init__(self, queries_for_node: Dict[int, exp.Expression], auto_commit: bool = False,
+                 result_cls: ResultClsType = None):
         super().__init__(result_cls)
         self.queries_for_node = queries_for_node
+        self.auto_commit = auto_commit
 
 
 class SerialExecutionPlan(ExecutionPlan):
-    def __init__(self, steps: List[ExecutionPlan], result_cls: ResultClsType = None):
+    def __init__(self, steps: List[ExecutionPlan], auto_commit: bool = True, result_cls: ResultClsType = None):
         super().__init__(result_cls)
         self.steps = steps
+        self.auto_commit = auto_commit
 
 
 SQLVal = int | float | bool | str
@@ -141,6 +145,16 @@ def eval_literal(expr: exp.Expression) -> SQLVal:
         assert False, f'unsupported expression {repr(expr)}'
 
 
+def identifiers_in_exp(e: exp.Expression) -> List[str]:
+    ident_list: List[str] = []
+    for node in e.dfs(prune=lambda _: False):
+        if isinstance(node, exp.Column):
+            assert isinstance(node.this, exp.Identifier)
+            if not node.this.quoted:
+                ident_list.append(node.this.this)
+    return ident_list
+
+
 class RegularTableSplitter:
     # `rules` maps the node id to its filter string, e.g. `NAME == 'bob' AND AGE > 4'
     def __init__(self, partition: Config.Partition, table_name: str):
@@ -149,6 +163,9 @@ class RegularTableSplitter:
         self.rules: Dict[int, exp.Expression] = {
             node_id: sql_parse_one(cond) for node_id, cond in partition.filter.items()
         }
+        self.ident_list: set[str] = set()
+        for cond in self.rules.values():
+            self.ident_list.update(identifiers_in_exp(cond))
 
     def partition_select_query(self, query: exp.Select) -> Dict[int, exp.Select]:
         return {node_id: self._restrict_select_with_rule(query, rule) for node_id, rule in self.rules.items()}
@@ -236,6 +253,7 @@ class Scheduler:
         stmt_list = sql_parse(query)
 
         steps: List[ExecutionPlan] = []
+
         for stmt in stmt_list:
             # CREATE is for every node
             if isinstance(stmt, exp.Create):
@@ -243,9 +261,30 @@ class Scheduler:
                     node_id: stmt for node_id in self.node_id_list
                 }))
 
-            # SELECT and DELETE are thrown to all belonging nodes
-            elif isinstance(stmt, exp.Select) or isinstance(stmt, exp.Delete):
-                table_name = stmt.args['from'].this.this.this  # From -> Table -> Identifier -> str
+            # SELECT, UPDATE and DELETE are thrown to all belonging nodes
+            elif isinstance(stmt, exp.Select) or isinstance(stmt, exp.Delete) or isinstance(stmt, exp.Update):
+                from_ = stmt.this if isinstance(stmt, exp.Update) else stmt.args['from'].this
+                assert isinstance(from_, exp.Table) and isinstance(from_.this, exp.Identifier), \
+                    f'{stmt.type} from {from_.type} not supported yet'
+                table_name = from_.this.this  # From -> Table -> Identifier -> str
+
+                # for UPDATE, we need to check whether the update changes partition key
+                if isinstance(stmt, exp.Update):
+                    partition_keys: set[str] = set()
+                    if table_name in self.regular_table_partitioners:
+                        partition_keys = self.regular_table_partitioners[table_name].ident_list
+                    elif table_name in self.dependent_partitions:
+                        partition_keys = set(self.dependent_partitions[table_name].dependentKey)
+                    else:
+                        assert False, f'not knowing the partition key of {table_name}'
+
+                    for update_eq in stmt.expressions:
+                        assert isinstance(update_eq, exp.EQ), f'Update with {update_eq.type} not supported yet'
+                        assert isinstance(update_eq.this, exp.Column)
+                        assert isinstance(update_eq.this.this, exp.Identifier)
+                        column_name = update_eq.this.this.this
+                        assert column_name not in partition_keys, \
+                            f'do not support update partition key `{column_name}` for table `{table_name}`'
 
                 # only Select stmt has returns
                 result_cls = table_name if isinstance(stmt, exp.Select) else None
@@ -257,12 +296,9 @@ class Scheduler:
                 elif table_name in self.dependent_partitions:
                     dependent_table = self.dependent_partitions[table_name].dependentTable
 
-                    # mypy bug?
-                    belonging_nodes: Iterable[int] = (  # type: ignore[no-redef]
-                        self.regular_table_partitioners[dependent_table].rules.keys()
-                    )
+                    dep_belonging_nodes: Iterable[int] = self.regular_table_partitioners[dependent_table].rules.keys()
                     steps.append(DistributedExecutionPlan({
-                        node_id: stmt for node_id in belonging_nodes
+                        node_id: stmt for node_id in dep_belonging_nodes
                     }, result_cls=result_cls))
                 else:
                     assert False, f'unknown table {repr(table_name)}'
@@ -309,11 +345,7 @@ class Scheduler:
                         query_for_node[node_id] = new_stmt
                 steps.append(DistributedExecutionPlan(query_for_node))
 
-            elif isinstance(stmt, exp.Update):
-                # TODO:
-                raise NotImplemented
-
             else:
                 raise NotImplementedError(f'{type(stmt)} is not supported')
 
-        return SerialExecutionPlan(steps)
+        return SerialExecutionPlan(steps, auto_commit=True)

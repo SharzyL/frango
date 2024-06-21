@@ -10,12 +10,12 @@ from typing import Optional, List, Sequence, Tuple, Callable, Any
 from loguru import logger
 import sqlglot.expressions as exp
 
-from frango.node.sql_schedule import sql_to_str, SQLVal
+from frango.node.scheduler import sql_to_str, SQLVal
 from frango.pb import node_pb
 
 
 @dataclass
-class QueryResult:
+class ExecutionResult:
     err_msg: Optional[str] = field(default=None)
     rows: List[Sequence[SQLVal]] = field(default_factory=list)
     header: List[str] = field(default_factory=list)
@@ -28,12 +28,12 @@ class QueryResult:
                                  header=self.header, rows_in_json=map(json.dumps, self.rows))
 
     @staticmethod
-    def from_pb(resp: node_pb.QueryResp) -> QueryResult:
+    def from_pb(resp: node_pb.QueryResp) -> ExecutionResult:
         assert not (resp.is_error and resp.header)
-        return QueryResult(err_msg=resp.err_msg, is_valid=resp.is_valid, is_error=False,
-                           header=list(resp.header), rows=list(map(json.loads, resp.rows_in_json)))
+        return ExecutionResult(err_msg=resp.err_msg, is_valid=resp.is_valid, is_error=False,
+                               header=list(resp.header), rows=list(map(json.loads, resp.rows_in_json)))
 
-    def merge(self, other: QueryResult) -> None:
+    def merge(self, other: ExecutionResult) -> None:
         if other.is_valid:
             assert self.is_valid
             # sqlite
@@ -55,7 +55,7 @@ class StorageBackend:
         self.db_conn.autocommit = False
         self.mutex = threading.Lock()
 
-    def execute(self, query: str | exp.Expression | List[exp.Expression]) -> QueryResult:
+    def execute(self, query: str | exp.Expression | List[exp.Expression]) -> ExecutionResult:
         cursor = self.db_conn.cursor()
 
         def execute_one(stmt_: exp.Expression) -> None:
@@ -88,12 +88,12 @@ class StorageBackend:
             rows: List[Sequence[SQLVal]] = cursor.fetchall()
             header = [i[0] for i in cursor.description] if cursor.description is not None else []
             is_valid = cursor.description is not None
-            logger.info(f'description: {cursor.description}, header: {header}')
-            return QueryResult(err_msg=None, rows=rows, header=header, is_valid=is_valid)
+            logger.info(f'sql returns with header: {header}, {len(rows)} rows')
+            return ExecutionResult(err_msg=None, rows=rows, header=header, is_valid=is_valid)
 
         except sqlite3.Error as e:
             logger.error(f'sql execute `{query}` error: {e}')
-            return QueryResult(err_msg=repr(e), is_error=True)
+            return ExecutionResult(err_msg=repr(e), is_error=True)
 
     def commit(self) -> None:
         logger.info(f'sql commit')

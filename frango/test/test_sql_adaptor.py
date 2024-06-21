@@ -3,7 +3,7 @@ import unittest
 import sqlglot.expressions as exp
 
 from frango.table_def import Article
-from frango.node.sql_schedule import sql_to_str
+from frango.node.scheduler import sql_to_str
 
 
 # noinspection SqlNoDataSourceInspection
