@@ -66,11 +66,14 @@ class FrangoNode:
             self.node.consensus.on_receive_msg(msg, self.event_loop)
             return node_pb.Empty()
 
-        @log_request
         async def Query(self, request: node_pb.QueryReq, context: grpc.ServicerContext) -> node_pb.QueryResp:
-            plan = self.node.scheduler.schedule_query(request.query_str)
-            result = await self._execute_query(plan)
-            return result.to_pb()
+            try:
+                plan = self.node.scheduler.schedule_query(request.query_str)
+                result = await self._execute_query(plan)
+                return result.to_pb()
+            except Exception as e:
+                logger.error(f'Error on handling query `{request.query_str}`: {repr(e)}')
+                return node_pb.QueryResp(err_msg=str(e), is_error=True)
 
         @log_request
         async def SubQuery(self, request: node_pb.QueryReq, context: grpc.ServicerContext) -> node_pb.QueryResp:

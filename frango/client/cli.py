@@ -7,6 +7,7 @@ from loguru import logger
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from frango.pb import node_pb, node_grpc
 from frango.config import DEFAULT_CONFIG_PATH, get_config
@@ -25,14 +26,32 @@ def query(stub: node_grpc.FrangoNodeStub, query_str: str, max_display_rows: int)
     query_resp: node_pb.QueryResp = stub.Query(query_req)
     ms = (time.time() - start) * 1000
 
-    logger.info(f'query "{query_str}" returns afters ({ms:.2f} ms) is_valid={query_resp.is_valid}')
+    console = Console()
 
     if query_resp.is_error:
-        logger.error(f'query "{query_str}" returned error:\n{query_resp.err_msg}')
+        console.log(f'query "{query_str}" returned error:\n{Text.from_ansi(query_resp.err_msg)}')
+    elif not query_resp.is_valid:
+        console.log(f'query "{query_str}" succeeded without error (takes {ms:.2f} ms)')
+
     elif query_resp.is_valid:
-        table = Table(title="Query result")
+        rows = list(map(json.loads, query_resp.rows_in_json))
+        for i, row in enumerate(rows):
+            assert isinstance(row, list)
+            assert len(row) == len(query_resp.header), f'row length {len(row)} != {len(query_resp.header)} in row {i}'
+
+        table = Table(title=f'Query result ({len(rows)} rows, takes {ms:.2f} ms)')
         for col_name in query_resp.header:
             table.add_column(col_name)
+
+        if len(rows) > 0:
+            row0 = rows[0]
+            for i, col in enumerate(row0):
+                if isinstance(col, int):
+                    table.columns[i].style = 'cyan'
+                elif isinstance(col, str):
+                    table.columns[i].style = 'yellow'
+                elif isinstance(col, float):
+                    table.columns[i].style = 'magenta'
 
         for i, row_json in enumerate(query_resp.rows_in_json):
             row = json.loads(row_json)
@@ -48,8 +67,6 @@ def query(stub: node_grpc.FrangoNodeStub, query_str: str, max_display_rows: int)
             else:
                 table.add_row(*map(str, row))
 
-        logger.info(f'{table}')
-        console = Console()
         console.print(table)
 
 
