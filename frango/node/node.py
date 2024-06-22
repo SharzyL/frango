@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from asyncio import Queue
 from pathlib import Path
 from typing import (Dict, Tuple, Optional, TypeAlias, Union, Any, TypeVar,
-                    ParamSpec, Awaitable, Iterable, Sequence, Callable)
+                    ParamSpec, Awaitable, Iterable, Sequence, Callable, List)
 
 import grpc.aio as grpc
 from loguru import logger
@@ -12,7 +13,7 @@ import rraft
 
 from frango.config import Config
 from frango.pb import node_pb, node_grpc
-from frango.sql_adaptor import SQLDef
+from frango.sql_adaptor import SQLDef, PARAMS_ARG_KEY
 from frango.table_def import Article, User, Read
 
 from frango.sql_adaptor import sql_to_str, sql_parse_one
@@ -80,6 +81,8 @@ class FrangoNode:
         async def SubQuery(self, request: node_pb.QueryReq, context: grpc.ServicerContext) -> node_pb.QueryResp:
             # SubQuery must be totally local
             query = sql_parse_one(request.query_str)
+            if request.params_json:
+                query.set(PARAMS_ARG_KEY, json.loads(request.params_json))
             plan = LocalExecutionPlan(query=query)
             result = await self._execute_query(plan)
             return result.to_pb()
@@ -122,9 +125,10 @@ class FrangoNode:
             if node_id != self_node_id
         }
 
+        self.node_id_list: List[int] = list(peers_dict.keys())
         self.known_classes: Dict[str, type] = known_classes or dict()
         self.consensus: NodeConsensus = NodeConsensus(self._make_rraft_config(), self.peer_stubs, config.raft)
-        self.scheduler: Scheduler = Scheduler(config.partitions, node_id_list=list(peers_dict.keys()),
+        self.scheduler: Scheduler = Scheduler(config.partitions, node_id_list=self.node_id_list,
                                               known_classes=self.known_classes)
 
         db_path = Path(config.db_path_pattern.replace('{{node_id}}', str(self_node_id)))
@@ -167,6 +171,7 @@ class FrangoNode:
         while stop_chan.empty():
             execute, result_chan = await query_chan.get()
             if isinstance(execute, ExecutionPlan):
+                logger.info(f'begin executing plan: {execute}')
                 result = await self._execute_plan(execute)
                 await result_chan.put(result)
             else:
@@ -204,6 +209,8 @@ class FrangoNode:
                     new_result = self.storage.execute(subquery)
                 else:
                     query_req = node_pb.QueryReq(query_str=sql_to_str(subquery))
+                    if PARAMS_ARG_KEY in subquery.args:
+                        query_req.params_json = json.dumps(subquery.args.get(PARAMS_ARG_KEY))
                     resp: node_pb.QueryResp = await self.peer_stubs[node_id].SubQuery(query_req)
                     new_result = ExecutionResult.from_pb(resp)
 
@@ -233,6 +240,8 @@ class FrangoNode:
                     involved_nodes.add(self.node_id)
                 elif isinstance(step, DistributedExecutionPlan):
                     involved_nodes.update(step.queries_for_node.keys())
+                elif isinstance(step, SerialExecutionPlan):
+                    involved_nodes = set(self.node_id_list)  # TODO: make it more precise
                 else:
                     assert False, f'not knowing how to determine involved nodes for {step.__class__.__name__}'
 

@@ -1,4 +1,5 @@
 from typing import Dict, Optional, Iterable, TypeAlias, cast, List, Set, Sequence, Callable, Tuple
+import collections
 
 import sqlglot.expressions as exp
 
@@ -22,6 +23,11 @@ class ExecutionPlan:
         return self._print(indent=0)
 
 
+class EmptyExecutionPlan(ExecutionPlan):
+    def _print(self, indent: int) -> str:
+        return ""
+
+
 class LocalExecutionPlan(ExecutionPlan):
     def __init__(self, query: exp.Expression, auto_commit: bool = False, result_cls: ResultClsType = None):
         super().__init__(result_cls)
@@ -29,7 +35,7 @@ class LocalExecutionPlan(ExecutionPlan):
         self.auto_commit = auto_commit
 
     def _print(self, indent: int) -> str:
-        return ' ' * indent + sql_to_str(self.query)
+        return ' ' * indent + '\033[90m' + sql_to_str(self.query) + '\033[0m'
 
 
 class DistributedExecutionPlan(ExecutionPlan):
@@ -42,18 +48,27 @@ class DistributedExecutionPlan(ExecutionPlan):
     def _print(self, indent: int) -> str:
         builder: List[str] = ['DistributedExecutionPlan']
         for node, query in self.queries_for_node.items():
-            builder.append(' ' * (indent + 2) + f'Node [{node}]: {query}')
+            builder.append(' ' * (indent + 2) + f'Node [{node}]: \033[90m{query}\033[0m')
         return '\n'.join(builder)
 
 
 class SerialExecutionPlan(ExecutionPlan):
-    def __init__(self, steps: List[ExecutionPlan], auto_commit: bool = True, result_cls: ResultClsType = None):
+    def __init__(self, steps: Optional[Sequence[ExecutionPlan]] = None,
+                 auto_commit: bool = True, result_cls: ResultClsType = None):
         super().__init__(result_cls)
-        self.steps = steps
-        self.auto_commit = auto_commit
+        self.steps: List[ExecutionPlan] = list(steps) if steps is not None else []
+        self.auto_commit: bool = auto_commit
+
+    def extend(self, plan: ExecutionPlan | Sequence[ExecutionPlan]) -> None:
+        if isinstance(plan, collections.abc.Sequence):
+            self.steps.extend(plan)
+        elif isinstance(plan, SerialExecutionPlan):
+            self.steps.extend(plan.steps)
+        else:
+            self.steps.append(plan)
 
     def _print(self, indent: int) -> str:
-        builder: List[str] = ['SerialExecutionPlan']
+        builder: List[str] = [f'SerialExecutionPlan (autocommit={self.auto_commit})']
         for i, step in enumerate(self.steps):
             builder.append(' ' * (indent + 2) + f'Step {i}: {step._print(indent + 2)}')
         return '\n'.join(builder)
@@ -190,7 +205,7 @@ class Scheduler:
             return ()  # TODO
 
     def schedule_bulk_load_for_node(self, input_tables: Dict[str, Sequence[SQLDef]], node_id: int) -> ExecutionPlan:
-        steps: list[ExecutionPlan] = []
+        steps = SerialExecutionPlan()
 
         for table_name, table_items in input_tables.items():
             if table_name in self.regular_table_partitioners:
@@ -204,14 +219,14 @@ class Scheduler:
 
             steps.extend(self._bulk_load_hook(table_items))
 
-        return SerialExecutionPlan(steps=steps)
+        return steps
 
-    def _schedule_simply_distributable(self, stmt: exp.Expression) -> Sequence[ExecutionPlan]:
-        return (DistributedExecutionPlan({
+    def _schedule_simply_distributable(self, stmt: exp.Expression) -> ExecutionPlan:
+        return DistributedExecutionPlan({
             node_id: stmt for node_id in self.node_id_list
-        }),)
+        })
 
-    def _schedule_distributed(self, stmt: exp.Expression) -> Sequence[ExecutionPlan]:
+    def _schedule_distributed(self, stmt: exp.Expression) -> ExecutionPlan:
         # TODO: handle update hook
         # sanity check, since we only supported simple statement now
         from_ = stmt.this if isinstance(stmt, exp.Update) else stmt.args['from'].this
@@ -243,27 +258,27 @@ class Scheduler:
         result_cls = table_name if isinstance(stmt, exp.Select) else None
         if table_name in self.regular_table_partitioners:
             belonging_nodes: Iterable[int] = self.regular_table_partitioners[table_name].rules.keys()
-            return (DistributedExecutionPlan({
+            return DistributedExecutionPlan({
                 node_id: stmt for node_id in belonging_nodes
-            }, result_cls=result_cls),)
+            }, result_cls=result_cls)
         elif table_name in self.dependent_partitions:
             dependent_table = self.dependent_partitions[table_name].dependentTable
 
             dep_belonging_nodes: Iterable[int] = self.regular_table_partitioners[dependent_table].rules.keys()
-            return (DistributedExecutionPlan({
+            return DistributedExecutionPlan({
                 node_id: stmt for node_id in dep_belonging_nodes
-            }, result_cls=result_cls),)
+            }, result_cls=result_cls)
         elif table_name in self.replicate_partitions:
             if isinstance(stmt, exp.Select):  # for select, we can do on any node
-                return (LocalExecutionPlan(stmt, result_cls=result_cls),)
+                return LocalExecutionPlan(stmt, result_cls=result_cls)
             else:  # for update and delete, we need to do on every node
-                return (DistributedExecutionPlan({
+                return DistributedExecutionPlan({
                     node_id: stmt for node_id in self.node_id_list
-                }, result_cls=result_cls),)
+                }, result_cls=result_cls)
         else:
             assert False, f'unknown table {repr(table_name)}'
 
-    def _schedule_insert(self, stmt: exp.Expression) -> Sequence[ExecutionPlan]:
+    def _schedule_insert(self, stmt: exp.Expression) -> ExecutionPlan:
         assert isinstance(stmt, exp.Insert)
 
         table_name, schema_map = self._parse_insert_schema(stmt)
@@ -290,7 +305,7 @@ class Scheduler:
                     new_stmt = stmt.copy()  # type: ignore[no-untyped-call]
                     new_stmt.set("expression", exp.Values(expressions=tuples_for_node[node_id]))
                     queries_for_node[node_id] = new_stmt
-            return (DistributedExecutionPlan(queries_for_node),)
+            return DistributedExecutionPlan(queries_for_node)
 
         elif table_name in self.dependent_partitions:
             partition = self.dependent_partitions[table_name]
@@ -304,7 +319,7 @@ class Scheduler:
             ]
             dependent_table = exp.Table(this=exp.Identifier(this=dependent_table_name))
 
-            steps: List[ExecutionPlan] = []
+            steps = SerialExecutionPlan()
             for tuple_, item in zip(tuples, items):
                 insert_queries_for_node: Dict[int, exp.Expression] = dict()
                 for node in partition_rule.keys():
@@ -327,14 +342,14 @@ class Scheduler:
                         exp.And(this=select_expression_key_eq, expression=rule_transformed)
                     )
                     insert_queries_for_node[node] = exp.Insert(this=stmt.this, expression=insert_select)
-                steps.append(DistributedExecutionPlan(queries_for_node=insert_queries_for_node))
+                steps.extend(DistributedExecutionPlan(queries_for_node=insert_queries_for_node))
 
             return steps
 
         elif table_name in self.replicate_partitions:
-            return (DistributedExecutionPlan({
+            return DistributedExecutionPlan({
                 node_id: stmt for node_id in self.node_id_list
-            }),)
+            })
 
         else:
             assert False, f'unknown table {repr(table_name)}'
@@ -360,15 +375,15 @@ class Scheduler:
 
         return tuples
 
-    def _schedule_insert_hook(self, stmt: exp.Insert) -> Sequence[ExecutionPlan]:
+    def _schedule_insert_hook(self, stmt: exp.Insert) -> ExecutionPlan:
         table_name, schema_map = self._parse_insert_schema(stmt)
         cls = self.known_classes.get(table_name, None)
         if cls is None:
-            return ()
+            return EmptyExecutionPlan()
         assert issubclass(cls, SQLDef)
 
         if not hasattr(cls, 'sql_hook_insert'):
-            return ()
+            return EmptyExecutionPlan()
         hook = cast(Callable[[SQLDef], exp.Expression], getattr(cls, 'sql_hook_insert'))
 
         tuples = self._parse_insert_tuples(stmt)
@@ -378,34 +393,38 @@ class Scheduler:
             item_dict = {field_name: sql_eval_literal(val) for field_name, val in zip(schema_map, tuple_vals)}
             return cast(SQLDef, cls.from_dict(item_dict))
 
-        steps: List[ExecutionPlan] = []
+        steps = SerialExecutionPlan()
         for t in tuples:
             item = parse_tuple(t)
-            steps.append(LocalExecutionPlan(hook(item)))
+            hook_query = hook(item)
+            hook_plan = self.schedule_query(hook_query)
+            steps.extend(hook_plan)
 
         return steps
 
     # schedule a query to partitioned database
-    def schedule_query(self, query: str) -> ExecutionPlan:
-        stmt_list = sql_parse(query)
+    def schedule_query(self, query: str | exp.Expression | List[exp.Expression]) -> ExecutionPlan:
+        stmt_list: Sequence[exp.Expression] = sql_parse(query) if isinstance(query, str) \
+            else [query] if isinstance(query, exp.Expression) \
+            else query
 
-        steps: List[ExecutionPlan] = []
+        plan = SerialExecutionPlan(steps=[], auto_commit=True)
 
         for stmt in stmt_list:
             # CREATE is for every node
             if isinstance(stmt, exp.Create):
-                steps.extend(self._schedule_simply_distributable(stmt))
+                plan.extend(self._schedule_simply_distributable(stmt))
 
             # SELECT, UPDATE and DELETE are thrown to all belonging nodes
             elif isinstance(stmt, exp.Select) or isinstance(stmt, exp.Delete) or isinstance(stmt, exp.Update):
-                steps.extend(self._schedule_distributed(stmt))
+                plan.extend(self._schedule_distributed(stmt))
 
             # distribute insert objects to all belonging nodes
             elif isinstance(stmt, exp.Insert):
-                steps.extend(self._schedule_insert(stmt))
-                steps.extend(self._schedule_insert_hook(stmt))
+                plan.extend(self._schedule_insert(stmt))
+                plan.extend(self._schedule_insert_hook(stmt))
 
             else:
                 raise NotImplementedError(f'{type(stmt)} is not supported')
 
-        return SerialExecutionPlan(steps, auto_commit=True)
+        return plan

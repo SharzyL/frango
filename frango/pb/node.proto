@@ -16,6 +16,7 @@ message RRaftMessage {
 
 message QueryReq {
     string query_str = 1;
+    string params_json = 2;
 }
 
 message QueryResp {

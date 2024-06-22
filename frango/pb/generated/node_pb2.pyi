@@ -25,10 +25,12 @@ class RRaftMessage(_message.Message):
     def __init__(self, the_bytes: _Optional[bytes] = ...) -> None: ...
 
 class QueryReq(_message.Message):
-    __slots__ = ("query_str",)
+    __slots__ = ("query_str", "params_json")
     QUERY_STR_FIELD_NUMBER: _ClassVar[int]
+    PARAMS_JSON_FIELD_NUMBER: _ClassVar[int]
     query_str: str
-    def __init__(self, query_str: _Optional[str] = ...) -> None: ...
+    params_json: str
+    def __init__(self, query_str: _Optional[str] = ..., params_json: _Optional[str] = ...) -> None: ...
 
 class QueryResp(_message.Message):
     __slots__ = ("err_msg", "header", "rows_in_json", "is_valid", "is_error")

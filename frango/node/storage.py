@@ -24,7 +24,7 @@ class ExecutionResult:
 
     def to_pb(self) -> node_pb.QueryResp:
         assert not (self.is_error and self.is_valid)  # we cannot have both error and header
-        return node_pb.QueryResp(err_msg=None, is_valid=self.is_valid, is_error=self.is_error,
+        return node_pb.QueryResp(err_msg=self.err_msg, is_valid=self.is_valid, is_error=self.is_error,
                                  header=self.header, rows_in_json=map(json.dumps, self.rows))
 
     @staticmethod
@@ -41,8 +41,9 @@ class ExecutionResult:
                 self.header = other.header
             self.rows.extend(other.rows)
             self.header = other.header
-        elif other.err_msg is not None:
+        elif other.is_error:
             self.is_valid = False
+            self.is_error = True
             if self.err_msg is None:
                 self.err_msg = ""
             self.err_msg += f"\n{other.err_msg}"
@@ -64,20 +65,20 @@ class StorageBackend:
             if PARAMS_ARG_KEY in stmt_.args:
                 params = stmt_.args.get(PARAMS_ARG_KEY)
                 if isinstance(params, dict):
-                    logger.info(f'sql execute: `{stmt_str}` with params: {params}')
+                    logger.debug(f'sql execute: `{stmt_str}` with params: {params}')
                     cursor.execute(stmt_str, params)
                 elif isinstance(params, list):
-                    logger.info(f'sql executemany: `{stmt_str}` with {len(params)} params (params[0] = {params[0]}')
+                    logger.debug(f'sql executemany: `{stmt_str}` with {len(params)} params (params[0] = {params[0]}')
                     cursor.executemany(stmt_str, params)
                 else:
                     raise ValueError(f'sql execute: `{stmt_str}` with unknown params type: params={params}')
             else:
-                logger.info(f'sql execute `{query}`')
+                logger.debug(f'sql execute `{query}`')
                 cursor.execute(stmt_str)
 
         try:
             if isinstance(query, str):
-                logger.info(f'sql execute `{query}`')
+                logger.debug(f'sql execute `{query}`')
                 cursor.execute(query)
             elif isinstance(query, exp.Expression):
                 execute_one(query)
@@ -89,7 +90,7 @@ class StorageBackend:
             header = [i[0] for i in cursor.description] if cursor.description is not None else []
             is_valid = cursor.description is not None
             if is_valid:
-                logger.info(f'sql returns with header: {header}, {len(rows)} rows')
+                logger.debug(f'sql returns with header: {header}, {len(rows)} rows')
             return ExecutionResult(err_msg=None, rows=rows, header=header, is_valid=is_valid)
 
         except sqlite3.Error as e:
