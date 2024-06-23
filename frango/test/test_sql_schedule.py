@@ -85,7 +85,7 @@ class TestSchedule(unittest.TestCase):
                 2: "id <= 4 AND gender == 'male'",
                 3: "id <= 4 AND gender != 'male'",
             }),
-            "Read": Config.Partition(type="dependent", dependentKey="id", dependentTable="Person")
+            "Read": Config.Partition(type="dependent", dependency_key="id", dependency_table="Person")
         }
         sch = Scheduler(partitions, node_id_list=[1, 2, 3])
         persons = [

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from asyncio import Queue
+from datetime import date, timedelta
 from pathlib import Path
 from typing import (Dict, Tuple, Optional, TypeAlias, Union, Any, TypeVar,
                     ParamSpec, Awaitable, Iterable, Sequence, Callable, List)
@@ -77,6 +78,15 @@ class FrangoNode:
                 logger.exception(f'Error on handling query `{request.query_str}`: {repr(e)}')
                 return node_pb.QueryResp(err_msg=str(e), is_error=True)
 
+        async def PopularRank(self, request: node_pb.PopularRankReq,
+                              context: grpc.ServicerContext) -> node_pb.QueryResp:
+            try:
+                result = await self.node.popular_rank(request.temporal_granularity, request.day)
+                return result.to_pb()
+            except Exception as e:
+                logger.exception(f'Error on handling popular_rank query `{request}`: {repr(e)}')
+                return node_pb.QueryResp(err_msg=str(e), is_error=True)
+
         @catch_request
         async def SubQuery(self, request: node_pb.QueryReq, context: grpc.ServicerContext) -> node_pb.QueryResp:
             # SubQuery must be totally local
@@ -119,8 +129,14 @@ class FrangoNode:
         peers_dict = {peer.node_id: peer for peer in config.peers}
         peer_self = peers_dict[self_node_id]
 
+        grpc_options = [
+            ('grpc.max_send_message_length', 256 * 1024 * 1024),
+            ('grpc.max_receive_message_length', 256 * 1024 * 1024),
+        ]
         self.peer_stubs: Dict[int, node_grpc.FrangoNodeStub] = {
-            node_id: node_grpc.FrangoNodeStub(grpc.insecure_channel(peer.listen))  # type: ignore[no-untyped-call]
+            node_id: node_grpc.FrangoNodeStub(
+                grpc.insecure_channel(peer.listen, options=grpc_options)  # type: ignore[no-untyped-call]
+            )
             for node_id, peer in peers_dict.items()
             if node_id != self_node_id
         }
@@ -178,14 +194,6 @@ class FrangoNode:
                 await self._finalize(execute == Action.ABORT, (self.node_id,))
                 await result_chan.put(ExecutionResult())  # empty response
 
-    async def _execute_distributed_plan(self, plan: DistributedExecutionPlan) -> ExecutionResult:
-        # 1. make a raft propose
-        # 2. wait for propose commit
-        # 3. distribute subquery
-        # 4. check (1) propose success (2) subquery success
-        # 5. commit / rollback
-        raise NotImplementedError
-
     # Note: this is not thread safe, hence we need a loop
     async def _execute_plan(self, plan: ExecutionPlan) -> ExecutionResult:
         if isinstance(plan, LocalExecutionPlan):
@@ -201,6 +209,7 @@ class FrangoNode:
             distri_result: Optional[ExecutionResult] = None
 
             # TODO: make it parallel
+            # TODO: handle ORDER BY, LIMIT
             for node_id, subquery in plan.queries_for_node.items():
                 new_result: Optional[ExecutionResult] = None
 
@@ -221,6 +230,14 @@ class FrangoNode:
                     distri_result.merge(new_result)
 
             assert distri_result is not None  # it must be non-null when plan is not empty
+
+            if plan.order_by:
+                assert len(plan.order_by) == 1, f'multiple order_by not supported yet'
+                distri_result.order_by(plan.order_by[0].column_name, plan.order_by[0].desc)
+
+            if plan.limit:
+                distri_result.limit(plan.limit)
+
             if plan.auto_commit:
                 await self._finalize(distri_result.is_error, plan.queries_for_node.keys())
 
@@ -258,6 +275,39 @@ class FrangoNode:
 
         else:
             raise NotImplementedError(f'{plan.__class__.__name__} is not supported')
+
+    # noinspection SqlNoDataSourceInspection,SqlResolve
+    async def popular_rank(self, temporal_granularity: int, day_str: str) -> ExecutionResult:
+        day_begin = date.fromisoformat(day_str)
+        granularity = node_pb.PopularRankReq.TemporalGranularity
+        days = 1 if temporal_granularity == granularity.DAILY \
+            else 7 if temporal_granularity == granularity.WEEKLY else 30
+        day_end = day_begin + timedelta(days=days)
+        sql = f'''
+            SELECT 
+               a.aid, 
+               COUNT(r.aid) AS read_count,
+               GROUP_CONCAT(r.id, ' ') as rid_list,
+               a.title, 
+               a.abstract, 
+               a.image,
+               a.video
+            FROM Read r JOIN Article a
+            ON r.aid = a.aid
+            WHERE datetime(r.timestamp / 1000, 'unixepoch') BETWEEN '{day_begin.isoformat()}' AND '{day_end.isoformat()}'
+            GROUP BY r.aid
+            ORDER BY read_count DESC
+            LIMIT 5;
+        '''
+        plan = DistributedExecutionPlan({
+            node_id: sql_parse_one(sql) for node_id in self.node_id_list
+        })
+        logger.info(f'popular_rank executes plan: {plan}')
+        result = await self._execute_plan(plan)
+        if result.is_error:
+            return result
+        assert result.is_valid and result.header[1] == 'read_count'
+        return result.order_by('read_count', desc=True).limit(5)
 
     async def loop(self) -> None:
         executor_chan: Queue[ExecutorMessage] = Queue()

@@ -1,7 +1,9 @@
+from dataclasses import dataclass
 from typing import Dict, Optional, Iterable, TypeAlias, cast, List, Set, Sequence, Callable, Tuple
 import collections
 
 import sqlglot.expressions as exp
+from loguru import logger
 
 from frango.config import Config
 from frango.sql_adaptor import SQLDef, PARAMS_ARG_KEY, sql_parse, sql_parse_one, sql_eval, sql_eval_literal, SQLVal, \
@@ -38,15 +40,30 @@ class LocalExecutionPlan(ExecutionPlan):
         return ' ' * indent + '\033[90m' + sql_to_str(self.query) + '\033[0m'
 
 
+@dataclass
+class OrderBy:
+    column_name: str
+    desc: bool
+
+
 class DistributedExecutionPlan(ExecutionPlan):
     def __init__(self, queries_for_node: Dict[int, exp.Expression], auto_commit: bool = False,
+                 order_by: Optional[List[OrderBy]] = None, limit: Optional[int] = None,
                  result_cls: ResultClsType = None):
         super().__init__(result_cls)
         self.queries_for_node = queries_for_node
         self.auto_commit = auto_commit
+        self.order_by: List[OrderBy] = order_by or []
+        self.limit = limit
 
     def _print(self, indent: int) -> str:
-        builder: List[str] = ['DistributedExecutionPlan']
+        header = 'DistributedExecutionPlan'
+        if self.order_by:
+            for order_by in self.order_by:
+                header += f' (order_by={order_by.column_name} DESC={order_by.desc})'
+        if self.limit:
+            header += f' (limit={self.limit})'
+        builder: List[str] = [header]
         for node, query in self.queries_for_node.items():
             builder.append(' ' * (indent + 2) + f'Node [{node}]: \033[90m{query}\033[0m')
         return '\n'.join(builder)
@@ -141,7 +158,7 @@ class Scheduler:
         partition = self.dependent_partitions[table_name]
         data_to_load: list[SQLDef] = []
 
-        dependent_key = partition.dependentKey
+        dependent_key = partition.dependency_key
         dependent_index = {getattr(item, dependent_key): item for item in dependent_data}
         for item in data:
             dependent_key_val = getattr(item, dependent_key)
@@ -170,7 +187,7 @@ class Scheduler:
 
         if len(table_items) == 0:
             return ()
-        dependent_table_name = self.dependent_partitions[table_name].dependentTable
+        dependent_table_name = self.dependent_partitions[table_name].dependency_table
         dependent_table = input_tables[dependent_table_name]
         table_cls = table_items[0].__class__
         data_to_load: Sequence[SQLDef] = self._find_data_to_load_from_dependent(
@@ -226,9 +243,78 @@ class Scheduler:
             node_id: stmt for node_id in self.node_id_list
         })
 
-    def _schedule_distributed(self, stmt: exp.Expression) -> ExecutionPlan:
+    def _schedule_select(self, stmt: exp.Expression) -> ExecutionPlan:
+        assert isinstance(stmt, exp.Select)
+
+        if 'from' not in stmt.args:  # no from, no partition
+            return LocalExecutionPlan(query=stmt)
+
+        from_ = stmt.args['from'].this
+        assert isinstance(from_, exp.Table) and isinstance(from_.this, exp.Identifier), \
+            f'{stmt.type} from {from_.type} not supported yet'
+        table_name = from_.this.this  # From -> Table -> Identifier -> str
+
+        # parse limit
+        limit: Optional[int] = None
+        if stmt.args.get('limit') is not None:
+            limit = stmt.args['limit']
+            assert isinstance(limit, exp.Limit) and isinstance(limit.expression, exp.Literal)
+            limit = int(limit.expression.this)
+
+        # parse order
+        order_by: List[OrderBy] = []
+        if stmt.args.get('order_by') is not None:
+            order = stmt.args['order']
+            assert isinstance(order, exp.Order)
+            assert len(order.expressions) == 1
+            ordered = order.expressions[0]
+            assert isinstance(ordered, exp.Ordered) and isinstance(ordered.this, exp.Column)
+            column: exp.Column = ordered.this
+            desc: bool = ordered.args.get('desc', False)
+            assert isinstance(column.this, exp.Identifier)
+            order_by.append(OrderBy(column_name=column.this.this, desc=desc))
+
+        # parse from and join to determine the partitions
+        regular_join_tables: List[str] = []
+        dependent_join_tables: List[str] = []
+
+        def allocate_table_name(table_name_: str) -> None:
+            if table_name_ in self.regular_table_partitioners:
+                regular_join_tables.append(table_name_)
+            elif table_name_ in self.dependent_partitions:
+                dependent_join_tables.append(table_name_)
+            elif table_name_ in self.replicate_partitions:
+                pass
+            else:
+                assert False, f'unknown join table {table_name_}'
+
+        allocate_table_name(table_name)
+
+        if 'joins' in stmt.args:
+            joins = stmt.args['joins']
+            for join in joins:
+                assert (isinstance(join, exp.Join) and isinstance(join.this, exp.Table) and
+                        isinstance(join.this.this, exp.Identifier))
+                join_table_name = join.this.this.this
+                allocate_table_name(join_table_name)
+
+        partitioned_table_num = len(regular_join_tables)
+        for dependent_table_name in dependent_join_tables:
+            dependency_table_name = self.dependent_partitions[dependent_table_name].dependency_table
+            if dependency_table_name not in regular_join_tables:
+                partitioned_table_num += 1
+
+        if partitioned_table_num == 0:  # all joined tables are replicate
+            return LocalExecutionPlan(query=stmt, result_cls=table_name)
+        elif partitioned_table_num == 1:  # rows in all tables are simply distributed
+            return DistributedExecutionPlan({
+                node_id: stmt for node_id in self.node_id_list
+            }, result_cls=table_name, order_by=order_by, limit=limit)
+        else:
+            assert False, f'join with multiple partitioned joins are not supported yet'
+
+    def _schedule_change(self, stmt: exp.Expression) -> ExecutionPlan:
         # TODO: handle update hook
-        # sanity check, since we only supported simple statement now
         from_ = stmt.this if isinstance(stmt, exp.Update) else stmt.args['from'].this
         assert isinstance(from_, exp.Table) and isinstance(from_.this, exp.Identifier), \
             f'{stmt.type} from {from_.type} not supported yet'
@@ -240,7 +326,7 @@ class Scheduler:
             if table_name in self.regular_table_partitioners:
                 partition_keys = self.regular_table_partitioners[table_name].ident_list
             elif table_name in self.dependent_partitions:
-                partition_keys = set(self.dependent_partitions[table_name].dependentKey)
+                partition_keys = set(self.dependent_partitions[table_name].dependency_key)
             elif table_name in self.replicate_partitions:
                 partition_keys = set()  # no partition, no worry
             else:
@@ -254,27 +340,26 @@ class Scheduler:
                 assert column_name not in partition_keys, \
                     f'do not support update partition key `{column_name}` for table `{table_name}`'
 
-        # only Select stmt has returns
-        result_cls = table_name if isinstance(stmt, exp.Select) else None
+        # handle ordinary, where the query is distributed to the belonging nodes of table_name
         if table_name in self.regular_table_partitioners:
             belonging_nodes: Iterable[int] = self.regular_table_partitioners[table_name].rules.keys()
             return DistributedExecutionPlan({
                 node_id: stmt for node_id in belonging_nodes
-            }, result_cls=result_cls)
+            })
         elif table_name in self.dependent_partitions:
-            dependent_table = self.dependent_partitions[table_name].dependentTable
+            dependent_table = self.dependent_partitions[table_name].dependency_table
 
             dep_belonging_nodes: Iterable[int] = self.regular_table_partitioners[dependent_table].rules.keys()
             return DistributedExecutionPlan({
                 node_id: stmt for node_id in dep_belonging_nodes
-            }, result_cls=result_cls)
+            })
         elif table_name in self.replicate_partitions:
             if isinstance(stmt, exp.Select):  # for select, we can do on any node
-                return LocalExecutionPlan(stmt, result_cls=result_cls)
+                return LocalExecutionPlan(stmt)
             else:  # for update and delete, we need to do on every node
                 return DistributedExecutionPlan({
                     node_id: stmt for node_id in self.node_id_list
-                }, result_cls=result_cls)
+                })
         else:
             assert False, f'unknown table {repr(table_name)}'
 
@@ -309,7 +394,7 @@ class Scheduler:
 
         elif table_name in self.dependent_partitions:
             partition = self.dependent_partitions[table_name]
-            dependent_table_name, dependent_key = partition.dependentTable, partition.dependentKey
+            dependent_table_name, dependent_key = partition.dependency_table, partition.dependency_key
             partition_rule: dict[int, exp.Expression] = self.regular_table_partitioners[dependent_table_name].rules
 
             tuples: List[exp.Tuple] = self._parse_insert_tuples(stmt)
@@ -408,16 +493,19 @@ class Scheduler:
             else [query] if isinstance(query, exp.Expression) \
             else query
 
-        plan = SerialExecutionPlan(steps=[], auto_commit=True)
+        plan = SerialExecutionPlan(auto_commit=True)
 
         for stmt in stmt_list:
             # CREATE is for every node
-            if isinstance(stmt, exp.Create):
+            if isinstance(stmt, exp.Create) or isinstance(stmt, exp.Drop):
                 plan.extend(self._schedule_simply_distributable(stmt))
 
             # SELECT, UPDATE and DELETE are thrown to all belonging nodes
-            elif isinstance(stmt, exp.Select) or isinstance(stmt, exp.Delete) or isinstance(stmt, exp.Update):
-                plan.extend(self._schedule_distributed(stmt))
+            elif isinstance(stmt, exp.Delete) or isinstance(stmt, exp.Update):
+                plan.extend(self._schedule_change(stmt))
+
+            elif isinstance(stmt, exp.Select):
+                plan.extend(self._schedule_select(stmt))
 
             # distribute insert objects to all belonging nodes
             elif isinstance(stmt, exp.Insert):

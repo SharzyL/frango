@@ -57,3 +57,19 @@ class SubQueryCompleteReq(_message.Message):
     ACTION_FIELD_NUMBER: _ClassVar[int]
     action: SubQueryCompleteReq.Action
     def __init__(self, action: _Optional[_Union[SubQueryCompleteReq.Action, str]] = ...) -> None: ...
+
+class PopularRankReq(_message.Message):
+    __slots__ = ("day", "temporal_granularity")
+    class TemporalGranularity(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+        __slots__ = ()
+        DAILY: _ClassVar[PopularRankReq.TemporalGranularity]
+        WEEKLY: _ClassVar[PopularRankReq.TemporalGranularity]
+        MONTHLY: _ClassVar[PopularRankReq.TemporalGranularity]
+    DAILY: PopularRankReq.TemporalGranularity
+    WEEKLY: PopularRankReq.TemporalGranularity
+    MONTHLY: PopularRankReq.TemporalGranularity
+    DAY_FIELD_NUMBER: _ClassVar[int]
+    TEMPORAL_GRANULARITY_FIELD_NUMBER: _ClassVar[int]
+    day: str
+    temporal_granularity: PopularRankReq.TemporalGranularity
+    def __init__(self, day: _Optional[str] = ..., temporal_granularity: _Optional[_Union[PopularRankReq.TemporalGranularity, str]] = ...) -> None: ...

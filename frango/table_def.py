@@ -163,38 +163,38 @@ CREATE VIEW PopularRank AS
 WITH RECURSIVE
 -- Generate a series of dates
 DateSeries AS (
-    SELECT datetime('now', '-1 year') AS date
+    SELECT datetime('2017-01-01') AS date
     UNION ALL
     SELECT date(date, '+1 day')
     FROM DateSeries
-    WHERE date < datetime('now')
+    WHERE date < datetime('2018-12-31')
 ),
 -- Daily aggregation
 DailyAgg AS (
     SELECT
-        strftime('%Y-%m-%d', timestamp) AS day_start,
+        strftime('%Y-%m-%d', timestamp / 1000) AS day_start,
         aid,
         SUM(readNum) AS total_reads
     FROM BeRead
-    GROUP BY strftime('%Y-%m-%d', timestamp), aid
+    GROUP BY strftime('%Y-%m-%d', timestamp / 1000), aid
 ),
 -- Weekly aggregation
 WeeklyAgg AS (
     SELECT
-        strftime('%Y-%W', timestamp) AS week_start,
+        strftime('%Y-%W', timestamp / 1000) AS week_start,
         aid,
         SUM(readNum) AS total_reads
     FROM BeRead
-    GROUP BY strftime('%Y-%W', timestamp), aid
+    GROUP BY strftime('%Y-%W', timestamp / 1000), aid
 ),
 -- Monthly aggregation
 MonthlyAgg AS (
     SELECT
-        strftime('%Y-%m', timestamp) AS month_start,
+        strftime('%Y-%m', timestamp / 1000) AS month_start,
         aid,
         SUM(readNum) AS total_reads
     FROM BeRead
-    GROUP BY strftime('%Y-%m', timestamp), aid
+    GROUP BY strftime('%Y-%m', timestamp / 1000), aid
 ),
 -- Rank articles for each temporal granularity
 DailyRank AS (

@@ -35,10 +35,21 @@ message SubQueryCompleteReq {
     Action action = 1;
 }
 
+message PopularRankReq {
+    string day = 1;
+    enum TemporalGranularity {
+        DAILY = 0;
+        WEEKLY = 1;
+        MONTHLY = 2;
+    };
+    TemporalGranularity temporal_granularity = 2;
+}
+
 service FrangoNode {
     rpc Ping (Empty) returns (PingResp);
     rpc RRaft (RRaftMessage) returns (Empty);
     rpc Query (QueryReq) returns (QueryResp);
+    rpc PopularRank (PopularRankReq) returns (QueryResp);
 
     // used for internode communication
     rpc SubQuery (QueryReq) returns (QueryResp);

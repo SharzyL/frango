@@ -26,8 +26,8 @@ class Config:
         filter: dict[int, str] = field(default_factory=dict)
 
         # valid if type == "dependent"
-        dependentTable: str = field(default="")
-        dependentKey: str = field(default="")
+        dependency_table: str = field(default="")
+        dependency_key: str = field(default="")
 
     peers: List[Peer]
     db_path_pattern: str

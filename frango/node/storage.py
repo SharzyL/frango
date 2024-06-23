@@ -33,7 +33,7 @@ class ExecutionResult:
         return ExecutionResult(err_msg=resp.err_msg, is_valid=resp.is_valid, is_error=False,
                                header=list(resp.header), rows=list(map(json.loads, resp.rows_in_json)))
 
-    def merge(self, other: ExecutionResult) -> None:
+    def merge(self, other: ExecutionResult) -> ExecutionResult:
         if other.is_valid:
             assert self.is_valid
             # sqlite
@@ -47,6 +47,16 @@ class ExecutionResult:
             if self.err_msg is None:
                 self.err_msg = ""
             self.err_msg += f"\n{other.err_msg}"
+        return self
+
+    def limit(self, limit: int) -> ExecutionResult:
+        self.rows = self.rows[:limit]
+        return self
+
+    def order_by(self, column_name: str, desc: bool) -> ExecutionResult:
+        idx = self.header.index(column_name)
+        self.rows.sort(key=lambda x: x[idx], reverse=desc)
+        return self
 
 
 class StorageBackend:
@@ -90,7 +100,8 @@ class StorageBackend:
             header = [i[0] for i in cursor.description] if cursor.description is not None else []
             is_valid = cursor.description is not None
             if is_valid:
-                logger.debug(f'sql returns with header: {header}, {len(rows)} rows')
+                logger.debug(f'sql returns with header: {header}, {len(rows)} rows'
+                             + f' rows[0] = {rows[0]}' if len(rows) else '')
             return ExecutionResult(err_msg=None, rows=rows, header=header, is_valid=is_valid)
 
         except sqlite3.Error as e:

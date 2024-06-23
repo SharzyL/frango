@@ -18,13 +18,11 @@ filter.2 = "category == 'technology'"
 
 [partitions.Read]
 type = "dependent"
-dependentTable = "User"
-dependentKey = "uid"
+dependency_table = "User"
+dependency_key = "uid"
 
 [partitions.PopularRank]
-type = "regular"
-filter.1 = "temporaGranularity == 'daily'"
-filter.2 = "temporaGranularity == 'weekly' OR temporaGranularity == 'monthly'"
+type = "replicate"
 
 [partitions.BeRead]
 type = "replicate"

@@ -29,6 +29,11 @@ class FrangoNodeStub(object):
                 request_serializer=node__pb2.QueryReq.SerializeToString,
                 response_deserializer=node__pb2.QueryResp.FromString,
                 )
+        self.PopularRank = channel.unary_unary(
+                '/frango.FrangoNode/PopularRank',
+                request_serializer=node__pb2.PopularRankReq.SerializeToString,
+                response_deserializer=node__pb2.QueryResp.FromString,
+                )
         self.SubQuery = channel.unary_unary(
                 '/frango.FrangoNode/SubQuery',
                 request_serializer=node__pb2.QueryReq.SerializeToString,
@@ -57,6 +62,12 @@ class FrangoNodeServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def Query(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PopularRank(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -91,6 +102,11 @@ def add_FrangoNodeServicer_to_server(servicer, server):
             'Query': grpc.unary_unary_rpc_method_handler(
                     servicer.Query,
                     request_deserializer=node__pb2.QueryReq.FromString,
+                    response_serializer=node__pb2.QueryResp.SerializeToString,
+            ),
+            'PopularRank': grpc.unary_unary_rpc_method_handler(
+                    servicer.PopularRank,
+                    request_deserializer=node__pb2.PopularRankReq.FromString,
                     response_serializer=node__pb2.QueryResp.SerializeToString,
             ),
             'SubQuery': grpc.unary_unary_rpc_method_handler(
@@ -160,6 +176,23 @@ class FrangoNode(object):
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/frango.FrangoNode/Query',
             node__pb2.QueryReq.SerializeToString,
+            node__pb2.QueryResp.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def PopularRank(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/frango.FrangoNode/PopularRank',
+            node__pb2.PopularRankReq.SerializeToString,
             node__pb2.QueryResp.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
