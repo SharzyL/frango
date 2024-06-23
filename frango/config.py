@@ -35,7 +35,7 @@ class Config:
     partitions: dict[str, Partition] = field(default_factory=dict)
 
 
-DEFAULT_CONFIG_PATH = "./etc/default.toml"
+DEFAULT_CONFIG_PATH = "./etc/frango.toml"
 
 
 def get_config(path: str | Path) -> Config:

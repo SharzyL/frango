@@ -5,18 +5,18 @@ from loguru import logger
 import sys
 
 from frango.sql_adaptor import SQLDef
-from frango.table_def import User, Article, Read, BeRead, PopularRank
+from frango.table_def import User, Article, Read, BeRead
 from frango.node.node import FrangoNode
-from frango.config import get_config_default
+from frango.config import get_config_default, DEFAULT_CONFIG_PATH
 
 
 async def async_main() -> None:
     parser = ArgumentParser(description='Frango node')
     parser.add_argument('--debug', action='store_true', help='enable debug mode')
-    parser.add_argument('--create', action='store_true', help='create table')
+    parser.add_argument('--create', action='store_true', help='create pre-specified tables')
     parser.add_argument('--bulk-load', type=Path, default=None, help='load db from basedir')
-    parser.add_argument('-i', type=int, required=True, help='index of node')
-    parser.add_argument('-c', '--config', type=Path, default="./etc/default.toml", help='config file')
+    parser.add_argument('-i', type=int, required=True, help='id of node')
+    parser.add_argument('-c', '--config', type=Path, default=DEFAULT_CONFIG_PATH, help='config file')
 
     args = parser.parse_args()
 

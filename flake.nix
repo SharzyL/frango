@@ -19,8 +19,16 @@
           python3 = pkgs.python312;
         in
         {
-          packages.default = frango;
           legacyPackages = pkgs;
+
+          packages.default = frango;
+          packages.frango-docker-image = pkgs.dockerTools.buildLayeredImage {
+            name = "frango";
+            tag = "latest";
+            contents = with pkgs; [ frango bash ];
+            config.Cmd = [ "/bin/frango-node" ];
+          };
+
           devShell = frango.overrideAttrs (oldAttrs: {
             nativeBuildInputs = oldAttrs.nativeBuildInputs ++ (with python3.pkgs; [
               (pkgs.pdm.override { inherit python3; })
@@ -29,6 +37,10 @@
               pytest
               types-protobuf
             ]);
+
+            shellHook = ''
+              export PYTHONPATH=$PYTHONPATH:.
+            '';
           });
         }
       )

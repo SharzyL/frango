@@ -71,7 +71,7 @@ def print_result(query_resp: node_pb.QueryResp, ms: float, max_display_rows: int
 def query(stub: node_grpc.FrangoNodeStub, query_str: str, max_display_rows: int, is_local: bool) -> None:
     start = time.time()
     query_req = node_pb.QueryReq(query_str=query_str)
-    query_resp: node_pb.QueryResp = stub.SubQuery(query_req) if is_local else stub.Query(query_req)
+    query_resp: node_pb.QueryResp = stub.LocalQuery(query_req) if is_local else stub.Query(query_req)
     ms = (time.time() - start) * 1000
     print_result(query_resp, ms, max_display_rows)
 
@@ -97,20 +97,20 @@ def main() -> None:
     _ = subparsers.add_parser('ping', help='Ping command')
 
     # query command
-    query_parser = subparsers.add_parser('query', help='Query command')
-    query_parser.add_argument('query_arg', type=str, help='Query argument', nargs='?')
+    query_parser = subparsers.add_parser('query', help='execute SQL query')
+    query_parser.add_argument('query_arg', type=str, help='query argument', nargs='?')
     query_parser.add_argument('-f', '--file', type=Path, help='path to sql file', default=None)
-    query_parser.add_argument('--local', action='store_true', help='Use SubQuery to force local query')
+    query_parser.add_argument('--local', action='store_true', help='use LocalQuery to force local query')
     query_parser.add_argument('--max-rows', type=int, default=50,
-                              help='Max rows to display on console, set to negative to disable')
+                              help='max rows to display on console, set to negative to disable')
 
     # parse command
-    parse_parser = subparsers.add_parser('parse', help='Parse sql')
+    parse_parser = subparsers.add_parser('parse', help='display the AST of parsed SQL for debugging purpose')
     parse_parser.add_argument('query_arg', type=str, help='sql string', nargs='?')
     parse_parser.add_argument('-f', '--file', type=Path, help='path to sql file', default=None)
 
     # popularRank command
-    rank_parser = subparsers.add_parser('popular-rank', help='Parse sql')
+    rank_parser = subparsers.add_parser('popular-rank', help='query the popular rank')
     rank_parser.add_argument('day', type=str, help='begin of time range in iso format')
     rank_parser.add_argument('-g', type=str, help='temporal granularity', default='daily')
 

@@ -24,7 +24,7 @@ from frango.node.scheduler import (
 from frango.node.consensus import NodeConsensus
 from frango.node.storage import StorageBackend, ExecutionResult
 
-Action: TypeAlias = node_pb.SubQueryCompleteReq.Action
+Action: TypeAlias = node_pb.LocalQueryCompleteReq.Action
 ExecutorMessage: TypeAlias = Tuple[Union[ExecutionPlan, Action], Queue[ExecutionResult]]
 
 F = TypeVar('F', bound=Callable[..., Any])
@@ -88,8 +88,8 @@ class FrangoNode:
                 return node_pb.QueryResp(err_msg=str(e), is_error=True)
 
         @catch_request
-        async def SubQuery(self, request: node_pb.QueryReq, context: grpc.ServicerContext) -> node_pb.QueryResp:
-            # SubQuery must be totally local
+        async def LocalQuery(self, request: node_pb.QueryReq, context: grpc.ServicerContext) -> node_pb.QueryResp:
+            # LocalQuery must be totally local
             query = sql_parse_one(request.query_str)
             if request.params_json:
                 query.set(PARAMS_ARG_KEY, json.loads(request.params_json))
@@ -98,7 +98,7 @@ class FrangoNode:
             return result.to_pb()
 
         @catch_request
-        async def SubQueryComplete(self, request: node_pb.SubQueryCompleteReq,
+        async def LocalQueryComplete(self, request: node_pb.LocalQueryCompleteReq,
                                    context: grpc.ServicerContext) -> node_pb.Empty:
             action = request.action
             result_queue: Queue[ExecutionResult] = Queue(maxsize=1)
@@ -181,7 +181,7 @@ class FrangoNode:
                     self.storage.commit()
             else:
                 action = Action.ABORT if is_error else Action.COMMIT
-                await self.peer_stubs[node_id_].SubQueryComplete(node_pb.SubQueryCompleteReq(action=action))
+                await self.peer_stubs[node_id_].LocalQueryComplete(node_pb.LocalQueryCompleteReq(action=action))
 
     async def executor_loop(self, stop_chan: Queue[None], query_chan: Queue[ExecutorMessage]) -> None:
         while stop_chan.empty():
@@ -210,17 +210,17 @@ class FrangoNode:
 
             # TODO: make it parallel
             # TODO: handle ORDER BY, LIMIT
-            for node_id, subquery in plan.queries_for_node.items():
+            for node_id, LocalQuery in plan.queries_for_node.items():
                 new_result: Optional[ExecutionResult] = None
 
                 # execute
                 if node_id == self.node_id:
-                    new_result = self.storage.execute(subquery)
+                    new_result = self.storage.execute(LocalQuery)
                 else:
-                    query_req = node_pb.QueryReq(query_str=sql_to_str(subquery))
-                    if PARAMS_ARG_KEY in subquery.args:
-                        query_req.params_json = json.dumps(subquery.args.get(PARAMS_ARG_KEY))
-                    resp: node_pb.QueryResp = await self.peer_stubs[node_id].SubQuery(query_req)
+                    query_req = node_pb.QueryReq(query_str=sql_to_str(LocalQuery))
+                    if PARAMS_ARG_KEY in LocalQuery.args:
+                        query_req.params_json = json.dumps(LocalQuery.args.get(PARAMS_ARG_KEY))
+                    resp: node_pb.QueryResp = await self.peer_stubs[node_id].LocalQuery(query_req)
                     new_result = ExecutionResult.from_pb(resp)
 
                 assert new_result is not None

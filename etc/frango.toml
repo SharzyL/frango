@@ -1,7 +1,6 @@
 peers = [
     { node_id = 1, listen = "127.0.0.1:45001" },
     { node_id = 2, listen = "127.0.0.1:45002" },
-#    { node_id = 3, listen = "127.0.0.1:45003" },
 ]
 
 db_path_pattern = ".run/node_{{node_id}}/db.sqlite3"

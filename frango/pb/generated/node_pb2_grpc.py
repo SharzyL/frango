@@ -34,14 +34,14 @@ class FrangoNodeStub(object):
                 request_serializer=node__pb2.PopularRankReq.SerializeToString,
                 response_deserializer=node__pb2.QueryResp.FromString,
                 )
-        self.SubQuery = channel.unary_unary(
-                '/frango.FrangoNode/SubQuery',
+        self.LocalQuery = channel.unary_unary(
+                '/frango.FrangoNode/LocalQuery',
                 request_serializer=node__pb2.QueryReq.SerializeToString,
                 response_deserializer=node__pb2.QueryResp.FromString,
                 )
-        self.SubQueryComplete = channel.unary_unary(
-                '/frango.FrangoNode/SubQueryComplete',
-                request_serializer=node__pb2.SubQueryCompleteReq.SerializeToString,
+        self.LocalQueryComplete = channel.unary_unary(
+                '/frango.FrangoNode/LocalQueryComplete',
+                request_serializer=node__pb2.LocalQueryCompleteReq.SerializeToString,
                 response_deserializer=node__pb2.Empty.FromString,
                 )
 
@@ -73,14 +73,14 @@ class FrangoNodeServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SubQuery(self, request, context):
+    def LocalQuery(self, request, context):
         """used for internode communication
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SubQueryComplete(self, request, context):
+    def LocalQueryComplete(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -109,14 +109,14 @@ def add_FrangoNodeServicer_to_server(servicer, server):
                     request_deserializer=node__pb2.PopularRankReq.FromString,
                     response_serializer=node__pb2.QueryResp.SerializeToString,
             ),
-            'SubQuery': grpc.unary_unary_rpc_method_handler(
-                    servicer.SubQuery,
+            'LocalQuery': grpc.unary_unary_rpc_method_handler(
+                    servicer.LocalQuery,
                     request_deserializer=node__pb2.QueryReq.FromString,
                     response_serializer=node__pb2.QueryResp.SerializeToString,
             ),
-            'SubQueryComplete': grpc.unary_unary_rpc_method_handler(
-                    servicer.SubQueryComplete,
-                    request_deserializer=node__pb2.SubQueryCompleteReq.FromString,
+            'LocalQueryComplete': grpc.unary_unary_rpc_method_handler(
+                    servicer.LocalQueryComplete,
+                    request_deserializer=node__pb2.LocalQueryCompleteReq.FromString,
                     response_serializer=node__pb2.Empty.SerializeToString,
             ),
     }
@@ -198,7 +198,7 @@ class FrangoNode(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def SubQuery(request,
+    def LocalQuery(request,
             target,
             options=(),
             channel_credentials=None,
@@ -208,14 +208,14 @@ class FrangoNode(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/frango.FrangoNode/SubQuery',
+        return grpc.experimental.unary_unary(request, target, '/frango.FrangoNode/LocalQuery',
             node__pb2.QueryReq.SerializeToString,
             node__pb2.QueryResp.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def SubQueryComplete(request,
+    def LocalQueryComplete(request,
             target,
             options=(),
             channel_credentials=None,
@@ -225,8 +225,8 @@ class FrangoNode(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/frango.FrangoNode/SubQueryComplete',
-            node__pb2.SubQueryCompleteReq.SerializeToString,
+        return grpc.experimental.unary_unary(request, target, '/frango.FrangoNode/LocalQueryComplete',
+            node__pb2.LocalQueryCompleteReq.SerializeToString,
             node__pb2.Empty.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

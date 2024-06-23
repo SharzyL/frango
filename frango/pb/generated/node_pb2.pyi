@@ -46,17 +46,17 @@ class QueryResp(_message.Message):
     is_error: bool
     def __init__(self, err_msg: _Optional[str] = ..., header: _Optional[_Iterable[str]] = ..., rows_in_json: _Optional[_Iterable[str]] = ..., is_valid: bool = ..., is_error: bool = ...) -> None: ...
 
-class SubQueryCompleteReq(_message.Message):
+class LocalQueryCompleteReq(_message.Message):
     __slots__ = ("action",)
     class Action(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
         __slots__ = ()
-        COMMIT: _ClassVar[SubQueryCompleteReq.Action]
-        ABORT: _ClassVar[SubQueryCompleteReq.Action]
-    COMMIT: SubQueryCompleteReq.Action
-    ABORT: SubQueryCompleteReq.Action
+        COMMIT: _ClassVar[LocalQueryCompleteReq.Action]
+        ABORT: _ClassVar[LocalQueryCompleteReq.Action]
+    COMMIT: LocalQueryCompleteReq.Action
+    ABORT: LocalQueryCompleteReq.Action
     ACTION_FIELD_NUMBER: _ClassVar[int]
-    action: SubQueryCompleteReq.Action
-    def __init__(self, action: _Optional[_Union[SubQueryCompleteReq.Action, str]] = ...) -> None: ...
+    action: LocalQueryCompleteReq.Action
+    def __init__(self, action: _Optional[_Union[LocalQueryCompleteReq.Action, str]] = ...) -> None: ...
 
 class PopularRankReq(_message.Message):
     __slots__ = ("day", "temporal_granularity")

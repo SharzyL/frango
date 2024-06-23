@@ -27,7 +27,7 @@ message QueryResp {
     bool is_error = 5;
 }
 
-message SubQueryCompleteReq {
+message LocalQueryCompleteReq {
     enum Action {
         COMMIT = 0;
         ABORT = 1;
@@ -52,6 +52,6 @@ service FrangoNode {
     rpc PopularRank (PopularRankReq) returns (QueryResp);
 
     // used for internode communication
-    rpc SubQuery (QueryReq) returns (QueryResp);
-    rpc SubQueryComplete (SubQueryCompleteReq) returns (Empty);
+    rpc LocalQuery (QueryReq) returns (QueryResp);
+    rpc LocalQueryComplete (LocalQueryCompleteReq) returns (Empty);
 }

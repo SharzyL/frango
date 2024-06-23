@@ -81,6 +81,8 @@ class SerialExecutionPlan(ExecutionPlan):
             self.steps.extend(plan)
         elif isinstance(plan, SerialExecutionPlan):
             self.steps.extend(plan.steps)
+        elif isinstance(plan, EmptyExecutionPlan):
+            pass
         else:
             self.steps.append(plan)
 
@@ -125,7 +127,7 @@ class RegularTableSplitter:
             raise RuntimeError(f'No matching rule of table `{self.table_name}` found for {item}')
         return nodes
 
-    # returns a map from node id to its subquery string
+    # returns a map from node id to its LocalQuery string
     @staticmethod
     def _restrict_select_with_rule(select: exp.Select, rule: exp.Expression) -> exp.Select:
         assert isinstance(select, exp.Select)
