@@ -13,10 +13,11 @@ ResultClsType: TypeAlias = Optional[type | str]
 
 
 class ExecutionPlan:
-    def __init__(self, result_cls: ResultClsType = None):
+    def __init__(self, result_cls: ResultClsType = None, read_only: bool = False):
         # result_cls is a hint of how the execution output is parsed
         # When it is a string, it represents the table name that we do not know how to parse
         self.result_cls = result_cls
+        self.read_only = read_only
 
     def _print(self, indent: int) -> str:
         raise NotImplementedError
@@ -26,13 +27,17 @@ class ExecutionPlan:
 
 
 class EmptyExecutionPlan(ExecutionPlan):
+    def __init__(self) -> None:
+        super(EmptyExecutionPlan, self).__init__(read_only=True)
+
     def _print(self, indent: int) -> str:
         return ""
 
 
 class LocalExecutionPlan(ExecutionPlan):
-    def __init__(self, query: exp.Expression, auto_commit: bool = False, result_cls: ResultClsType = None):
-        super().__init__(result_cls)
+    def __init__(self, query: exp.Expression, auto_commit: bool = False, result_cls: ResultClsType = None,
+                 read_only: bool = False):
+        super().__init__(result_cls, read_only)
         self.query = query
         self.auto_commit = auto_commit
 
@@ -49,15 +54,15 @@ class OrderBy:
 class DistributedExecutionPlan(ExecutionPlan):
     def __init__(self, queries_for_node: Dict[int, exp.Expression], auto_commit: bool = False,
                  order_by: Optional[List[OrderBy]] = None, limit: Optional[int] = None,
-                 result_cls: ResultClsType = None):
-        super().__init__(result_cls)
+                 result_cls: ResultClsType = None, read_only: bool = False):
+        super().__init__(result_cls, read_only)
         self.queries_for_node = queries_for_node
         self.auto_commit = auto_commit
         self.order_by: List[OrderBy] = order_by or []
         self.limit = limit
 
     def _print(self, indent: int) -> str:
-        header = 'DistributedExecutionPlan'
+        header = f'DistributedExecutionPlan (read_only={self.read_only})'
         if self.order_by:
             for order_by in self.order_by:
                 header += f' (order_by={order_by.column_name} DESC={order_by.desc})'
@@ -71,23 +76,30 @@ class DistributedExecutionPlan(ExecutionPlan):
 
 class SerialExecutionPlan(ExecutionPlan):
     def __init__(self, steps: Optional[Sequence[ExecutionPlan]] = None,
-                 auto_commit: bool = True, result_cls: ResultClsType = None):
-        super().__init__(result_cls)
+                 auto_commit: bool = True, result_cls: ResultClsType = None, read_only: bool = False):
+        super().__init__(result_cls, read_only)
         self.steps: List[ExecutionPlan] = list(steps) if steps is not None else []
         self.auto_commit: bool = auto_commit
 
     def extend(self, plan: ExecutionPlan | Sequence[ExecutionPlan]) -> None:
         if isinstance(plan, collections.abc.Sequence):
+            for step in plan:
+                assert isinstance(step, ExecutionPlan)
+                if not step.read_only:
+                    self.read_only = False
             self.steps.extend(plan)
-        elif isinstance(plan, SerialExecutionPlan):
-            self.steps.extend(plan.steps)
-        elif isinstance(plan, EmptyExecutionPlan):
-            pass
         else:
-            self.steps.append(plan)
+            if not plan.read_only:
+                self.read_only = False
+            if isinstance(plan, SerialExecutionPlan):
+                self.steps.extend(plan.steps)
+            elif isinstance(plan, EmptyExecutionPlan):
+                pass
+            else:  # other
+                self.steps.append(plan)
 
     def _print(self, indent: int) -> str:
-        builder: List[str] = [f'SerialExecutionPlan (autocommit={self.auto_commit})']
+        builder: List[str] = [f'SerialExecutionPlan (read_only={self.read_only}) (auto_commit={self.auto_commit})']
         for i, step in enumerate(self.steps):
             builder.append(' ' * (indent + 2) + f'Step {i}: {step._print(indent + 2)}')
         return '\n'.join(builder)
@@ -244,7 +256,7 @@ class Scheduler:
     def _schedule_simply_distributable(self, stmt: exp.Expression) -> ExecutionPlan:
         return DistributedExecutionPlan({
             node_id: stmt for node_id in self.node_id_list
-        })
+        }, read_only=False)
 
     def _schedule_select(self, stmt: exp.Expression) -> ExecutionPlan:
         assert isinstance(stmt, exp.Select)
@@ -308,11 +320,11 @@ class Scheduler:
                 partitioned_table_num += 1
 
         if partitioned_table_num == 0:  # all joined tables are replicate
-            return LocalExecutionPlan(query=stmt, result_cls=table_name)
+            return LocalExecutionPlan(query=stmt, result_cls=table_name, read_only=True)
         elif partitioned_table_num == 1:  # rows in all tables are simply distributed
             return DistributedExecutionPlan({
                 node_id: stmt for node_id in self.node_id_list
-            }, result_cls=table_name, order_by=order_by, limit=limit)
+            }, result_cls=table_name, order_by=order_by, limit=limit, read_only=True)
         else:
             assert False, f'join with multiple partitioned joins are not supported yet'
 
@@ -348,21 +360,18 @@ class Scheduler:
             belonging_nodes: Iterable[int] = self.regular_table_partitioners[table_name].rules.keys()
             return DistributedExecutionPlan({
                 node_id: stmt for node_id in belonging_nodes
-            })
+            }, read_only=False)
         elif table_name in self.dependent_partitions:
             dependent_table = self.dependent_partitions[table_name].dependency_table
 
             dep_belonging_nodes: Iterable[int] = self.regular_table_partitioners[dependent_table].rules.keys()
             return DistributedExecutionPlan({
                 node_id: stmt for node_id in dep_belonging_nodes
-            })
+            }, read_only=False)
         elif table_name in self.replicate_partitions:
-            if isinstance(stmt, exp.Select):  # for select, we can do on any node
-                return LocalExecutionPlan(stmt)
-            else:  # for update and delete, we need to do on every node
-                return DistributedExecutionPlan({
-                    node_id: stmt for node_id in self.node_id_list
-                })
+            return DistributedExecutionPlan({
+                node_id: stmt for node_id in self.node_id_list
+            }, read_only=False)
         else:
             assert False, f'unknown table {repr(table_name)}'
 
@@ -393,7 +402,7 @@ class Scheduler:
                     new_stmt = stmt.copy()  # type: ignore[no-untyped-call]
                     new_stmt.set("expression", exp.Values(expressions=tuples_for_node[node_id]))
                     queries_for_node[node_id] = new_stmt
-            return DistributedExecutionPlan(queries_for_node)
+            return DistributedExecutionPlan(queries_for_node, read_only=False)
 
         elif table_name in self.dependent_partitions:
             partition = self.dependent_partitions[table_name]
@@ -437,7 +446,7 @@ class Scheduler:
         elif table_name in self.replicate_partitions:
             return DistributedExecutionPlan({
                 node_id: stmt for node_id in self.node_id_list
-            })
+            }, read_only=False)
 
         else:
             assert False, f'unknown table {repr(table_name)}'

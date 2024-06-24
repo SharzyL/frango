@@ -17,8 +17,8 @@ filter.2 = "category == 'technology'"
 
 [partitions.Read]
 type = "dependent"
-dependency_table = "User"
-dependency_key = "uid"
+dependency_table = "Article"
+dependency_key = "aid"
 
 [partitions.PopularRank]
 type = "replicate"

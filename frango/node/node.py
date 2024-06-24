@@ -12,13 +12,11 @@ from typing import (Dict, Tuple, Optional, TypeAlias, Union, Any, TypeVar,
 import grpc.aio as grpc
 from loguru import logger
 import rraft
+import sqlglot.expressions as exp
 
 from frango.config import Config
 from frango.pb import node_pb, node_grpc
-from frango.sql_adaptor import SQLDef, PARAMS_ARG_KEY
-from frango.table_def import Article, User, Read
-
-from frango.sql_adaptor import sql_to_str, sql_parse_one
+from frango.sql_adaptor import SQLDef, PARAMS_ARG_KEY, sql_to_str, sql_parse_one
 from frango.node.scheduler import (
     Scheduler, SerialExecutionPlan, LocalExecutionPlan, DistributedExecutionPlan, ExecutionPlan,
 )
@@ -247,26 +245,29 @@ class FrangoNode:
 
             distri_result: Optional[ExecutionResult] = None
 
-            # TODO: make it parallel
-            # TODO: handle ORDER BY, LIMIT
+            async def make_query(node_id_: int, query: exp.Expression) -> Tuple[int, ExecutionResult]:
+                if node_id_ == self.node_id:
+                    result_ = self.storage.execute(query)
+                    return node_id_, result_
+                else:
+                    query_req = node_pb.QueryReq(query_str=sql_to_str(query))
+                    if PARAMS_ARG_KEY in query.args:
+                        query_req.params_json = json.dumps(query.args.get(PARAMS_ARG_KEY))
+                    resp: node_pb.QueryResp = await self.peer_stubs[node_id_].LocalQuery(query_req)
+                    result_ = ExecutionResult.from_pb(resp)
+                    return node_id_, result_
+
+            futures: List[Awaitable[Tuple[int, ExecutionResult]]] = []
+
             for node_id, LocalQuery in plan.queries_for_node.items():
-                new_result: Optional[ExecutionResult] = None
+                futures.append(asyncio.create_task(make_query(node_id, LocalQuery)))
 
-                # execute
-                if node_id == self.node_id:
-                    new_result = self.storage.execute(LocalQuery)
-                else:
-                    query_req = node_pb.QueryReq(query_str=sql_to_str(LocalQuery))
-                    if PARAMS_ARG_KEY in LocalQuery.args:
-                        query_req.params_json = json.dumps(LocalQuery.args.get(PARAMS_ARG_KEY))
-                    resp: node_pb.QueryResp = await self.peer_stubs[node_id].LocalQuery(query_req)
-                    new_result = ExecutionResult.from_pb(resp)
-
-                assert new_result is not None
+            for future in futures:
+                node_id, result = await future
                 if distri_result is None:
-                    distri_result = new_result
+                    distri_result = result
                 else:
-                    distri_result.merge(new_result)
+                    distri_result.merge(result)
 
             assert distri_result is not None  # it must be non-null when plan is not empty
 
@@ -277,7 +278,7 @@ class FrangoNode:
             if plan.limit:
                 distri_result.limit(plan.limit)
 
-            if plan.auto_commit:
+            if plan.auto_commit and not plan.read_only:
                 await self._finalize(distri_result.is_error, plan.queries_for_node.keys())
 
             return distri_result
@@ -307,7 +308,7 @@ class FrangoNode:
 
             assert serial_result is not None  # it must be non-null when plan is not empty
 
-            if plan.auto_commit:
+            if plan.auto_commit and not plan.read_only:
                 await self._finalize(serial_result.is_error, involved_nodes)
 
             return serial_result
