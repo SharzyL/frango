@@ -2,17 +2,17 @@
 # It is not intended for manual editing.
 
 [metadata]
-groups = ["default"]
+groups = ["default", "dev"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:cc028a90fdd33988887ab6b474270b6ae7db6a9d7ad96e2a96c48557f69f51d4"
+content_hash = "sha256:a91d939c343575a0c10b43c3d2a2ea2d2a889ba85d06e2eab8cd4c84c5d2ad45"
 
 [[package]]
 name = "colorama"
 version = "0.4.6"
 requires_python = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*,>=2.7"
 summary = "Cross-platform colored terminal text."
-groups = ["default"]
+groups = ["default", "dev"]
 marker = "sys_platform == \"win32\""
 files = [
     {file = "colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"},
@@ -34,7 +34,7 @@ name = "grpcio"
 version = "1.64.1"
 requires_python = ">=3.8"
 summary = "HTTP/2-based RPC framework"
-groups = ["default"]
+groups = ["default", "dev"]
 files = [
     {file = "grpcio-1.64.1-cp312-cp312-linux_armv7l.whl", hash = "sha256:4657d24c8063e6095f850b68f2d1ba3b39f2b287a38242dcabc166453e950c59"},
     {file = "grpcio-1.64.1-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:62b4e6eb7bf901719fce0ca83e3ed474ae5022bb3827b0a501e056458c51c0a1"},
@@ -46,6 +46,41 @@ files = [
     {file = "grpcio-1.64.1-cp312-cp312-win32.whl", hash = "sha256:55260032b95c49bee69a423c2f5365baa9369d2f7d233e933564d8a47b893027"},
     {file = "grpcio-1.64.1-cp312-cp312-win_amd64.whl", hash = "sha256:c1a786ac592b47573a5bb7e35665c08064a5d77ab88a076eec11f8ae86b3e3f6"},
     {file = "grpcio-1.64.1.tar.gz", hash = "sha256:8d51dd1c59d5fa0f34266b80a3805ec29a1f26425c2a54736133f6d87fc4968a"},
+]
+
+[[package]]
+name = "grpcio-tools"
+version = "1.64.1"
+requires_python = ">=3.8"
+summary = "Protobuf code generator for gRPC"
+groups = ["dev"]
+dependencies = [
+    "grpcio>=1.64.1",
+    "protobuf<6.0dev,>=5.26.1",
+    "setuptools",
+]
+files = [
+    {file = "grpcio_tools-1.64.1-cp312-cp312-linux_armv7l.whl", hash = "sha256:acf9a8bce188bb760c138327a89f64be8bbeb062634d151c77bbcd138d60bdc6"},
+    {file = "grpcio_tools-1.64.1-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:8c7d0633b1177fafaeb76e9b0c7b8b14221eb1086874a79925879b298843f8a0"},
+    {file = "grpcio_tools-1.64.1-cp312-cp312-manylinux_2_17_aarch64.whl", hash = "sha256:35efe38dd8cc5e05f44e67bcc2ae40f461862549b5d2590c1b644c5d4d93c390"},
+    {file = "grpcio_tools-1.64.1-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:e28cfaede2a243452252c94b72378f1d939b786689cb11d218fdae6a8421940f"},
+    {file = "grpcio_tools-1.64.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6711f3e3fbfae9313e15f9abc47241d881772f3fb4e4d0257918bff24363139e"},
+    {file = "grpcio_tools-1.64.1-cp312-cp312-musllinux_1_1_i686.whl", hash = "sha256:be39db97d13f3bd0b2ff9bf8d0e68f590f4877cf2c4db201a2f9d4d39724e137"},
+    {file = "grpcio_tools-1.64.1-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:22efb9a167da6fd051c76f1a00c4275b5d15e8b7842364c84dc4cc88def8fd4c"},
+    {file = "grpcio_tools-1.64.1-cp312-cp312-win32.whl", hash = "sha256:d9a470f9e72bccc8994b025fa40cb1a7202db17a5f8e1869f4c2079ded869ac2"},
+    {file = "grpcio_tools-1.64.1-cp312-cp312-win_amd64.whl", hash = "sha256:5ecfecf1da38fa9f0f95dd5f3314c04974be5af40264c520fbc1a9f4f5b1acca"},
+    {file = "grpcio_tools-1.64.1.tar.gz", hash = "sha256:72b3550b91adb8354656ecf0f6d1d4611299044bae11fb1e7cc1d1bb66b8c1eb"},
+]
+
+[[package]]
+name = "iniconfig"
+version = "2.0.0"
+requires_python = ">=3.7"
+summary = "brain-dead simple config-ini parsing"
+groups = ["dev"]
+files = [
+    {file = "iniconfig-2.0.0-py3-none-any.whl", hash = "sha256:b6a85871a79d2e3b22d2d1b94ac2824226a63c6b741c88f7ae975f18b6778374"},
+    {file = "iniconfig-2.0.0.tar.gz", hash = "sha256:2d91e135bf72d31a410b17c16da610a82cb55f6b0477d1a902134b24a455b8b3"},
 ]
 
 [[package]]
@@ -89,6 +124,75 @@ files = [
 ]
 
 [[package]]
+name = "mypy"
+version = "1.10.0"
+requires_python = ">=3.8"
+summary = "Optional static typing for Python"
+groups = ["dev"]
+dependencies = [
+    "mypy-extensions>=1.0.0",
+    "typing-extensions>=4.1.0",
+]
+files = [
+    {file = "mypy-1.10.0-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:a781f6ad4bab20eef8b65174a57e5203f4be627b46291f4589879bf4e257b97b"},
+    {file = "mypy-1.10.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:b808e12113505b97d9023b0b5e0c0705a90571c6feefc6f215c1df9381256e30"},
+    {file = "mypy-1.10.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8f55583b12156c399dce2df7d16f8a5095291354f1e839c252ec6c0611e86e2e"},
+    {file = "mypy-1.10.0-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:4cf18f9d0efa1b16478c4c129eabec36148032575391095f73cae2e722fcf9d5"},
+    {file = "mypy-1.10.0-cp312-cp312-win_amd64.whl", hash = "sha256:bc6ac273b23c6b82da3bb25f4136c4fd42665f17f2cd850771cb600bdd2ebeda"},
+    {file = "mypy-1.10.0-py3-none-any.whl", hash = "sha256:f8c083976eb530019175aabadb60921e73b4f45736760826aa1689dda8208aee"},
+    {file = "mypy-1.10.0.tar.gz", hash = "sha256:3d087fcbec056c4ee34974da493a826ce316947485cef3901f511848e687c131"},
+]
+
+[[package]]
+name = "mypy-extensions"
+version = "1.0.0"
+requires_python = ">=3.5"
+summary = "Type system extensions for programs checked with the mypy type checker."
+groups = ["dev"]
+files = [
+    {file = "mypy_extensions-1.0.0-py3-none-any.whl", hash = "sha256:4392f6c0eb8a5668a69e23d168ffa70f0be9ccfd32b5cc2d26a34ae5b844552d"},
+    {file = "mypy_extensions-1.0.0.tar.gz", hash = "sha256:75dbf8955dc00442a438fc4d0666508a9a97b6bd41aa2f0ffe9d2f2725af0782"},
+]
+
+[[package]]
+name = "packaging"
+version = "24.1"
+requires_python = ">=3.8"
+summary = "Core utilities for Python packages"
+groups = ["dev"]
+files = [
+    {file = "packaging-24.1-py3-none-any.whl", hash = "sha256:5b8f2217dbdbd2f7f384c41c628544e6d52f2d0f53c6d0c3ea61aa5d1d7ff124"},
+    {file = "packaging-24.1.tar.gz", hash = "sha256:026ed72c8ed3fcce5bf8950572258698927fd1dbda10a5e981cdf0ac37f4f002"},
+]
+
+[[package]]
+name = "pluggy"
+version = "1.5.0"
+requires_python = ">=3.8"
+summary = "plugin and hook calling mechanisms for python"
+groups = ["dev"]
+files = [
+    {file = "pluggy-1.5.0-py3-none-any.whl", hash = "sha256:44e1ad92c8ca002de6377e165f3e0f1be63266ab4d554740532335b9d75ea669"},
+    {file = "pluggy-1.5.0.tar.gz", hash = "sha256:2cffa88e94fdc978c4c574f15f9e59b7f4201d439195c3715ca9e2486f1d0cf1"},
+]
+
+[[package]]
+name = "protobuf"
+version = "5.27.1"
+requires_python = ">=3.8"
+summary = ""
+groups = ["dev"]
+files = [
+    {file = "protobuf-5.27.1-cp310-abi3-win32.whl", hash = "sha256:3adc15ec0ff35c5b2d0992f9345b04a540c1e73bfee3ff1643db43cc1d734333"},
+    {file = "protobuf-5.27.1-cp310-abi3-win_amd64.whl", hash = "sha256:25236b69ab4ce1bec413fd4b68a15ef8141794427e0b4dc173e9d5d9dffc3bcd"},
+    {file = "protobuf-5.27.1-cp38-abi3-macosx_10_9_universal2.whl", hash = "sha256:4e38fc29d7df32e01a41cf118b5a968b1efd46b9c41ff515234e794011c78b17"},
+    {file = "protobuf-5.27.1-cp38-abi3-manylinux2014_aarch64.whl", hash = "sha256:917ed03c3eb8a2d51c3496359f5b53b4e4b7e40edfbdd3d3f34336e0eef6825a"},
+    {file = "protobuf-5.27.1-cp38-abi3-manylinux2014_x86_64.whl", hash = "sha256:ee52874a9e69a30271649be88ecbe69d374232e8fd0b4e4b0aaaa87f429f1631"},
+    {file = "protobuf-5.27.1-py3-none-any.whl", hash = "sha256:4ac7249a1530a2ed50e24201d6630125ced04b30619262f06224616e0030b6cf"},
+    {file = "protobuf-5.27.1.tar.gz", hash = "sha256:df5e5b8e39b7d1c25b186ffdf9f44f40f810bbcc9d2b71d9d3156fee5a9adf15"},
+]
+
+[[package]]
 name = "pygments"
 version = "2.18.0"
 requires_python = ">=3.8"
@@ -97,6 +201,23 @@ groups = ["default"]
 files = [
     {file = "pygments-2.18.0-py3-none-any.whl", hash = "sha256:b8e6aca0523f3ab76fee51799c488e38782ac06eafcf95e7ba832985c8e7b13a"},
     {file = "pygments-2.18.0.tar.gz", hash = "sha256:786ff802f32e91311bff3889f6e9a86e81505fe99f2735bb6d60ae0c5004f199"},
+]
+
+[[package]]
+name = "pytest"
+version = "8.2.2"
+requires_python = ">=3.8"
+summary = "pytest: simple powerful testing with Python"
+groups = ["dev"]
+dependencies = [
+    "colorama; sys_platform == \"win32\"",
+    "iniconfig",
+    "packaging",
+    "pluggy<2.0,>=1.5",
+]
+files = [
+    {file = "pytest-8.2.2-py3-none-any.whl", hash = "sha256:c434598117762e2bd304e526244f67bf66bbd7b5d6cf22138be51ff661980343"},
+    {file = "pytest-8.2.2.tar.gz", hash = "sha256:de4bb8104e201939ccdc688b27a89a7be2079b22e2bd2b07f806b6ba71117977"},
 ]
 
 [[package]]
@@ -125,14 +246,47 @@ files = [
 ]
 
 [[package]]
+name = "setuptools"
+version = "70.1.0"
+requires_python = ">=3.8"
+summary = "Easily download, build, install, upgrade, and uninstall Python packages"
+groups = ["dev"]
+files = [
+    {file = "setuptools-70.1.0-py3-none-any.whl", hash = "sha256:d9b8b771455a97c8a9f3ab3448ebe0b29b5e105f1228bba41028be116985a267"},
+    {file = "setuptools-70.1.0.tar.gz", hash = "sha256:01a1e793faa5bd89abc851fa15d0a0db26f160890c7102cd8dce643e886b47f5"},
+]
+
+[[package]]
 name = "sqlglot"
-version = "25.2.0"
+version = "25.3.0"
 requires_python = ">=3.7"
 summary = "An easily customizable SQL parser and transpiler"
 groups = ["default"]
 files = [
-    {file = "sqlglot-25.2.0-py3-none-any.whl", hash = "sha256:734dedf43c1a453eb0ab02dd9e245290855bb44ee3a569acb661fd378484955f"},
-    {file = "sqlglot-25.2.0.tar.gz", hash = "sha256:545ee36ab9f94bb227715d6bff63872509280c584046854d4d977daff169c6e2"},
+    {file = "sqlglot-25.3.0-py3-none-any.whl", hash = "sha256:1cca732e7c2ba4fe86665d8e05d7af49b3f2a5e7ec45a8f3ab0649d4207351b9"},
+    {file = "sqlglot-25.3.0.tar.gz", hash = "sha256:c4ce5e38148c29f3bb19d8dcf1bfaaa4833eb283e9e6771e39a7e90dd6b79a0c"},
+]
+
+[[package]]
+name = "types-protobuf"
+version = "5.26.0.20240422"
+requires_python = ">=3.8"
+summary = "Typing stubs for protobuf"
+groups = ["dev"]
+files = [
+    {file = "types-protobuf-5.26.0.20240422.tar.gz", hash = "sha256:e6074178109f97efe9f0b20a035ba61d7c3b03e867eb47d254d2b2ab6a805e36"},
+    {file = "types_protobuf-5.26.0.20240422-py3-none-any.whl", hash = "sha256:e4dc2554d342501d5aebc3c71203868b51118340e105fc190e3a64ca1be43831"},
+]
+
+[[package]]
+name = "typing-extensions"
+version = "4.12.2"
+requires_python = ">=3.8"
+summary = "Backported and Experimental Type Hints for Python 3.8+"
+groups = ["dev"]
+files = [
+    {file = "typing_extensions-4.12.2-py3-none-any.whl", hash = "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d"},
+    {file = "typing_extensions-4.12.2.tar.gz", hash = "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"},
 ]
 
 [[package]]
