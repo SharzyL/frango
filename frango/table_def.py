@@ -29,6 +29,14 @@ class Article(LoadMixin, SQLDef):  # type: ignore[misc]
     def __primary_key__() -> str:
         return "aid"
 
+    @classmethod
+    def sql_hook_create(cls) -> exp.Expression:
+        stmt = sql_parse_one('''
+            CREATE INDEX idx_Article ON Article(aid);
+            ''')
+        assert isinstance(stmt, exp.Create)
+        return stmt
+
     def sql_hook_insert(self) -> exp.Expression:
         insert = sql_parse_one('''
 INSERT INTO BeRead (
@@ -57,6 +65,14 @@ class User(SQLDef):
     preferTags: str
     obtainedCredits: int
 
+    @classmethod
+    def sql_hook_create(cls) -> exp.Expression:
+        stmt = sql_parse_one('''
+            CREATE INDEX idx_User ON User(uid);
+        ''')
+        assert isinstance(stmt, exp.Create)
+        return stmt
+
     @staticmethod
     def __primary_key__() -> str:
         return "uid"
@@ -74,6 +90,14 @@ class Read(SQLDef):
     commentOrNot: bool
     shareOrNot: bool
     commentDetail: str
+
+    @classmethod
+    def sql_hook_create(cls) -> exp.Expression:
+        stmt = sql_parse_one('''
+            CREATE INDEX idx_Read ON Read(aid, timestamp);
+        ''')
+        assert isinstance(stmt, exp.Create)
+        return stmt
 
     def sql_hook_insert(self) -> exp.Expression:
         update = sql_parse_one('''

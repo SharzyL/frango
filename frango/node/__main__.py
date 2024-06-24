@@ -34,10 +34,7 @@ async def async_main() -> None:
 
     if args.create:
         for cls in (Article, User, Read, BeRead):
-            assert issubclass(cls, SQLDef)
-            frango_node.storage.execute(cls.sql_drop_if_exists())
-            frango_node.storage.execute(cls.sql_create())
-        frango_node.storage.commit()
+            await frango_node.create(cls, auto_commit=False)
 
     if args.bulk_load is not None:
         table_dat_files = {
@@ -45,7 +42,9 @@ async def async_main() -> None:
             "User": args.bulk_load / "user.dat",
             "Read": args.bulk_load / "read.dat",
         }
-        await frango_node.bulk_load(table_dat_files)
+        await frango_node.bulk_load(table_dat_files, auto_commit=False)
+
+    if args.create and args.bulk_load is not None:
         frango_node.storage.commit()
 
     await frango_node.loop()

@@ -223,8 +223,9 @@ class Scheduler:
         else:
             return ()  # TODO
 
-    def schedule_bulk_load_for_node(self, input_tables: Dict[str, Sequence[SQLDef]], node_id: int) -> ExecutionPlan:
-        steps = SerialExecutionPlan()
+    def schedule_bulk_load_for_node(self, input_tables: Dict[str, Sequence[SQLDef]], node_id: int,
+                                    auto_commit: bool = True) -> ExecutionPlan:
+        steps = SerialExecutionPlan(auto_commit=auto_commit)
 
         for table_name, table_items in input_tables.items():
             if table_name in self.regular_table_partitioners:

@@ -153,14 +153,28 @@ class FrangoNode:
 
         self.listen: str = peer_self.listen
 
+        self._loop_started = False
         self._stop_chan: Queue[None] = Queue(maxsize=1)
 
-    async def bulk_load(self, table_dat_files: Dict[str, Path]) -> None:
-        known_tables = [Article, User, Read]
-        known_table_idx = {cls.__name__: cls for cls in known_tables}
+    async def create(self, cls: type, auto_commit: bool = True):
+        assert not self._loop_started
+
+        assert issubclass(cls, SQLDef)
+        plan = SerialExecutionPlan(auto_commit=auto_commit)
+        plan.extend(LocalExecutionPlan(cls.sql_drop_if_exists()))
+        plan.extend(LocalExecutionPlan(cls.sql_create()))
+        if hasattr(cls, 'sql_hook_create'):
+            hook = getattr(cls, 'sql_hook_create')
+            plan.extend(LocalExecutionPlan(hook()))
+        logger.info(f'begin executing plan for table creation: {plan}')
+        await self._execute_plan(plan)
+
+    async def bulk_load(self, table_dat_files: Dict[str, Path], auto_commit: bool = True) -> None:
+        assert not self._loop_started
+
         tables: Dict[str, Sequence[SQLDef]] = dict()
         for table_name, dat_file in table_dat_files.items():
-            cls = known_table_idx[table_name]
+            cls = self.known_classes[table_name]
             table = []
             logger.info(f'reading "{cls.__name__}" data from "{dat_file}"')
             with open(dat_file, 'r') as f:
@@ -169,7 +183,8 @@ class FrangoNode:
                     table.append(cls.from_json(line))
             tables[table_name] = table
 
-        plan = self.scheduler.schedule_bulk_load_for_node(tables, self.node_id)
+        plan = self.scheduler.schedule_bulk_load_for_node(tables, self.node_id, auto_commit=auto_commit)
+        logger.info(f'begin executing plan for bulk load: {plan}')
         await self._execute_plan(plan)
 
     async def _finalize(self, is_error: bool, nodes: Iterable[int]) -> None:
@@ -310,6 +325,7 @@ class FrangoNode:
         return result.order_by('read_count', desc=True).limit(5)
 
     async def loop(self) -> None:
+        self._loop_started = True
         executor_chan: Queue[ExecutorMessage] = Queue()
 
         servicer = self.FrangoNodeServicer(self, asyncio.get_running_loop(), executor_chan)
@@ -321,3 +337,5 @@ class FrangoNode:
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self.consensus.loop_until_stopped())
             tg.create_task(self.executor_loop(self._stop_chan, executor_chan))
+
+        self._loop_started = False
