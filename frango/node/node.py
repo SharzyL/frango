@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 from asyncio import Queue
-from datetime import date, timedelta
+from collections import deque
+from datetime import date, timedelta, datetime
 from pathlib import Path
 from typing import (Dict, Tuple, Optional, TypeAlias, Union, Any, TypeVar,
                     ParamSpec, Awaitable, Iterable, Sequence, Callable, List)
@@ -40,12 +41,26 @@ class FrangoNode:
             self.node = node
             self.event_loop = event_loop
             self.executor_chan = executor_chan
+            self._last_minute_req_time: deque[datetime] = deque()  # TODO: protect with mutex
 
         async def _execute_query(self, plan: ExecutionPlan) -> ExecutionResult:
             result_queue: Queue[ExecutionResult] = Queue(maxsize=1)
 
             await self.executor_chan.put((plan, result_queue))
             return await result_queue.get()
+
+        def _update_last_minute_req(self) -> None:
+            now = datetime.now()
+            while self._last_minute_req_time:
+                oldest_req = self._last_minute_req_time[0]
+                if now - oldest_req > timedelta(minutes=1):
+                    self._last_minute_req_time.popleft()
+                else:
+                    break
+
+        def _count_last_minute_req(self) -> int:
+            self._update_last_minute_req()
+            return len(self._last_minute_req_time)
 
         @staticmethod
         def catch_request(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
@@ -61,7 +76,13 @@ class FrangoNode:
 
         @catch_request
         async def Ping(self, request: node_pb.Empty, context: grpc.ServicerContext) -> node_pb.PingResp:
-            return node_pb.PingResp(id=self.node.node_id, leader_id=self.node.consensus.leader_id())
+            return node_pb.PingResp(
+                id=self.node.node_id,
+                leader_id=self.node.consensus.leader_id(),
+                db_location=str(self.node.storage.db_path),
+                db_size_bytes=self.node.storage.db_size(),
+                requests_last_minute=self._count_last_minute_req(),
+            )
 
         @catch_request
         async def RRaft(self, request: node_pb.RRaftMessage, context: grpc.ServicerContext) -> node_pb.Empty:
@@ -71,6 +92,9 @@ class FrangoNode:
 
         async def Query(self, request: node_pb.QueryReq, context: grpc.ServicerContext) -> node_pb.QueryResp:
             try:
+                self._update_last_minute_req()
+                self._last_minute_req_time.append(datetime.now())
+
                 plan = self.node.scheduler.schedule_query(request.query_str)
                 result = await self._execute_query(plan)
                 return result.to_pb()
@@ -156,7 +180,7 @@ class FrangoNode:
         self._loop_started = False
         self._stop_chan: Queue[None] = Queue(maxsize=1)
 
-    async def create(self, cls: type, auto_commit: bool = True):
+    async def create(self, cls: type, auto_commit: bool = True) -> None:
         assert not self._loop_started
 
         assert issubclass(cls, SQLDef)

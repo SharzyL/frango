@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass, field
 import sqlite3
@@ -62,9 +63,13 @@ class ExecutionResult:
 class StorageBackend:
     def __init__(self, db_path: Path):
         logger.info(f'sql connect to "{db_path}"')
+        self.db_path = db_path
         self.db_conn = sqlite3.connect(db_path, check_same_thread=False)
         self.db_conn.autocommit = False
         self.mutex = threading.Lock()
+
+    def db_size(self) -> int:
+        return os.path.getsize(self.db_path)
 
     def execute(self, query: str | exp.Expression | List[exp.Expression]) -> ExecutionResult:
         cursor = self.db_conn.cursor()

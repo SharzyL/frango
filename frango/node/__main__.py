@@ -4,7 +4,6 @@ from pathlib import Path
 from loguru import logger
 import sys
 
-from frango.sql_adaptor import SQLDef
 from frango.table_def import User, Article, Read, BeRead
 from frango.node.node import FrangoNode
 from frango.config import get_config_default, DEFAULT_CONFIG_PATH

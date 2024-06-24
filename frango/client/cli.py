@@ -2,6 +2,8 @@ import json
 from argparse import ArgumentParser
 import time
 from pathlib import Path
+from typing import List, Tuple, Dict
+from concurrent.futures import ThreadPoolExecutor
 
 import grpc
 import rich
@@ -85,11 +87,26 @@ def popular_rank(stub: node_grpc.FrangoNodeStub, day: str,
     print_result(query_resp, ms)
 
 
+def status(stubs: Dict[int, node_grpc.FrangoNodeStub]) -> None:
+    def do_ping(stub_: node_grpc.FrangoNodeStub) -> Tuple[float, node_pb.PingResp]:
+        start = time.time()
+        resp_ = stub_.Ping(node_pb.Empty())
+        ms_ = (time.time() - start) * 1000
+        return ms_, resp_
+
+    for node_id, stub in stubs.items():
+        ms, resp = do_ping(stub)
+        rich.print(f'Node {node_id}')
+        rich.print(f'  Latency: ({ms:.2f} ms)')
+        rich.print(f'  Database size: {resp.db_size_bytes / 1024. / 1024.:.2f} MB')
+        rich.print(f'  Database location: {resp.db_location}')
+        rich.print(f'  Last minute requests: {resp.requests_last_minute}')
+
+
 def main() -> None:
     parser = ArgumentParser(description='Frango API client')
     parser.add_argument('-c', '--config', type=str, help='configuration file path',
                         default=DEFAULT_CONFIG_PATH)
-    parser.add_argument('-i', type=int, default=1, help='default peer id to query')
 
     subparsers = parser.add_subparsers(dest='command')
 
@@ -103,33 +120,42 @@ def main() -> None:
     query_parser.add_argument('--local', action='store_true', help='use LocalQuery to force local query')
     query_parser.add_argument('--max-rows', type=int, default=50,
                               help='max rows to display on console, set to negative to disable')
+    query_parser.add_argument('-i', type=int, default=1, help='default peer id to query')
 
     # parse command
     parse_parser = subparsers.add_parser('parse', help='display the AST of parsed SQL for debugging purpose')
     parse_parser.add_argument('query_arg', type=str, help='sql string', nargs='?')
     parse_parser.add_argument('-f', '--file', type=Path, help='path to sql file', default=None)
+    parse_parser.add_argument('-i', type=int, default=1, help='default peer id to query')
 
     # popularRank command
     rank_parser = subparsers.add_parser('popular-rank', help='query the popular rank')
     rank_parser.add_argument('day', type=str, help='begin of time range in iso format')
     rank_parser.add_argument('-g', type=str, help='temporal granularity', default='daily')
+    rank_parser.add_argument('-i', type=int, default=1, help='default peer id to query')
+
+    _ = subparsers.add_parser('status', help='monitor server status')
 
     args = parser.parse_args()
 
     config = get_config(args.config)
     peers_dict = {peer.node_id: peer for peer in config.peers}
-    listen = peers_dict[args.i].listen if args.i else config.peers[0].listen
-    stub = node_grpc.FrangoNodeStub(channel=grpc.insecure_channel(listen))  # type: ignore[no-untyped-call]
+    stubs = {
+        node_id: node_grpc.FrangoNodeStub(
+            channel=grpc.insecure_channel(peers_dict[node_id].listen)
+        )  # type: ignore[no-untyped-call]
+        for node_id in peers_dict.keys()
+    }
 
     if args.command == 'ping':
-        ping(stub)
+        ping(stubs[args.i])
     elif args.command == 'query':
         query_str = args.query_arg
         is_local = args.local
         if args.file is not None:
             assert isinstance(args.file, Path)
             query_str = args.file.read_text()
-        query(stub, query_str, args.max_rows, is_local)
+        query(stubs[args.i], query_str, args.max_rows, is_local)
     elif args.command == 'parse':
         query_str = args.query_arg
         if args.file is not None:
@@ -147,7 +173,9 @@ def main() -> None:
         if g is None:
             logger.error(f'Unknown temporal granularity: {args.g}')
             exit(1)
-        popular_rank(stub, day, g)
+        popular_rank(stubs[args.i], day, g)
+    elif args.command == 'status':
+        status(stubs)
     else:
         logger.error(f'Unknown command {args.command}')
         parser.print_help()

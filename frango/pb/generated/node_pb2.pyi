@@ -11,12 +11,18 @@ class Empty(_message.Message):
     def __init__(self) -> None: ...
 
 class PingResp(_message.Message):
-    __slots__ = ("id", "leader_id")
+    __slots__ = ("id", "leader_id", "db_size_bytes", "db_location", "requests_last_minute")
     ID_FIELD_NUMBER: _ClassVar[int]
     LEADER_ID_FIELD_NUMBER: _ClassVar[int]
+    DB_SIZE_BYTES_FIELD_NUMBER: _ClassVar[int]
+    DB_LOCATION_FIELD_NUMBER: _ClassVar[int]
+    REQUESTS_LAST_MINUTE_FIELD_NUMBER: _ClassVar[int]
     id: int
     leader_id: int
-    def __init__(self, id: _Optional[int] = ..., leader_id: _Optional[int] = ...) -> None: ...
+    db_size_bytes: int
+    db_location: str
+    requests_last_minute: int
+    def __init__(self, id: _Optional[int] = ..., leader_id: _Optional[int] = ..., db_size_bytes: _Optional[int] = ..., db_location: _Optional[str] = ..., requests_last_minute: _Optional[int] = ...) -> None: ...
 
 class RRaftMessage(_message.Message):
     __slots__ = ("the_bytes",)

@@ -7,6 +7,9 @@ message Empty {}
 message PingResp {
     int32 id = 1;
     optional int32 leader_id = 2;
+    int64 db_size_bytes = 3;
+    string db_location = 4;
+    int64 requests_last_minute = 5;
 }
 
 message RRaftMessage {
