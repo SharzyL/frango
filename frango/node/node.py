@@ -327,7 +327,6 @@ class FrangoNode:
             SELECT 
                a.aid, 
                COUNT(r.aid) AS read_count,
-               GROUP_CONCAT(r.id, ' ') as rid_list,
                a.title, 
                a.abstract, 
                a.image,

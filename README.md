@@ -53,7 +53,7 @@ If you do not want to install yet another package manager, you can try installin
 
 <details><summary>OCI-compatible container image (e.g. for Docker user).</summary>
 
-Download the container image, e.g. `frango.tar.gz`.
+Download the container image from the project [release page](https://github.com/SharzyL/frango/releases), suppose its file name is `frango.tar.gz`.
 
 ```console
 $ podman load -i frango.tar.gz
@@ -72,7 +72,7 @@ In the first shell, starts `frango-node -i 1 --bulk-load ../db-generation --crea
 Now in the third shell, we can interact with nodes with `frango-cli`.
 
 ```
-$ pdm cli query "SELECT datetime(timestamp / 1000, 'unixepoch') AS date, aid, readTimeLength FROM Read WHERE date BETWEEN '2017-09-24' AND '2017-09-26' LIMIT 20"
+$ frango-cli query "SELECT datetime(timestamp / 1000, 'unixepoch') AS date, aid, readTimeLength FROM Read WHERE date BETWEEN '2017-09-24' AND '2017-09-26' LIMIT 20"
      Query result (20 rows, takes 6.12 ms)
 ┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━┓
 ┃ date                ┃ aid  ┃ readTimeLength ┃
